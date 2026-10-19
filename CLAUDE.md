@@ -12,6 +12,36 @@
 - **前端**：Vite + React + TypeScript（啟用 React Compiler，以 oxlint 檢查）、react-router（`HashRouter`），以 GitHub Actions 部署到 GitHub Pages
 - **套件管理**：前後端一律使用 **yarn 4.12**（corepack，`packageManager` 欄位），不要使用 npm；兩邊都設定 `nodeLinker: node-modules`
 
+## 開發流程
+
+1. **構想**：使用者以文字描述頁面設計／操作流程／資料操作，Claude 提出行動計畫（含需由使用者手動修改試算表的步驟）。
+2. **確認細節**：使用 `grilling` skill 交叉詢問；結束後 Claude 整理定案計畫，使用者回覆同意後才開始實作。
+3. **實作**：從最新 `master` 開新分支，一個功能一個分支。分支命名 `feature/<簡述>`、`fix/<簡述>`、`setting/<簡述>`。
+   - 後端以 `yarn deploy:staging` 更新**測試部署**供驗證；Claude **不得**執行 `yarn deploy`（正式部署）。
+   - 完成前自我檢查：`web/` 執行 `yarn lint`、`yarn build`；`api/` 執行 `yarn clasp show-file-status`。
+   - 完成後提供驗證清單（操作步驟、預期結果、需事先準備的試算表測試資料），等待使用者以 `yarn dev:staging` 驗證。
+4. **提交**：驗證通過後 commit 並以 `gh` 開 PR（描述含變更摘要、手動步驟、驗證清單），同一 PR 更新本檔「目前進度」與相關說明。
+   - commit 格式：`[FEATURE]`／`[FIX]`／`[SETTING]` + 簡述
+   - **commit 訊息、PR 標題與描述不得出現任何與 Claude 或 AI 相關的字樣或署名（含 `Co-Authored-By`、「Generated with Claude Code」）**
+5. **合併與部署**：由使用者手動 merge 並執行 `yarn deploy`（`web/` 於 merge 後由 GitHub Actions 自動部署）。Claude 不執行 merge，也不更新正式部署。
+
+### 使用測試部署驗證
+
+- **Claude**：在功能分支的 `api/` 執行 `yarn deploy:staging`，通知使用者並附驗證清單；修正後再次執行即可（使用者重新整理頁面）。
+- **使用者**：`git checkout <分支>` → `web/` 執行 `yarn dev:staging` → 依清單操作。`yarn dev` 連的是正式部署（舊後端），驗證新後端必須用 `yarn dev:staging`。
+- 只改前端時不需要測試部署，用 `yarn dev` 驗證即可。
+- 測試部署只有一個，反映最後一次 `deploy:staging` 的分支；一次只驗證一個功能。
+- 手機／平板測試需 `yarn dev:staging --host`，且 WSL2 需另外設定連接埠轉發。
+
+### 正式上線（使用者執行）
+
+```bash
+git checkout master && git pull
+cd api && yarn deploy
+```
+
+- **務必先切回 `master` 並 pull**：`clasp push` 推送的是本機目前的檔案，不是 GitHub 上的 `master`。
+
 ## 目前進度
 
 - [x] Google Sheets schema 已建立
@@ -31,7 +61,7 @@ api/
 ├── .clasp.json        ← 指令碼 ID 與 rootDir（rootDir 固定為 src）
 ├── .claspignore       ← 推送白名單（路徑以 rootDir 為基準）
 ├── .yarnrc.yml        ← nodeLinker: node-modules
-├── .env.local         ← DEPLOYMENT_ID（不提交；範本為 .env.example）
+├── .env.local         ← DEPLOYMENT_ID、STAGING_DEPLOYMENT_ID（不提交；範本為 .env.example）
 ├── package.json       ← clasp 為 devDependency
 ├── yarn.lock
 ├── .yarn/             ← yarn 狀態檔，不提交
@@ -52,7 +82,8 @@ api/
 |---|---|
 | `yarn push` | 推送程式碼（`/dev` 測試網址立即生效，`/exec` 不變） |
 | `yarn watch` | 存檔自動推送 |
-| `yarn deploy` | 推送、建立新版本並更新正式部署 `/exec`（網址不變） |
+| `yarn deploy` | 推送、建立新版本並更新正式部署 `/exec`（網址不變；僅使用者執行） |
+| `yarn deploy:staging` | 推送、建立新版本並更新測試部署 `/exec`（驗證分支功能用） |
 | `yarn clasp deployments` | 列出部署與其 ID |
 | `yarn clasp pull` | 把線上版本拉回本機（僅在有人改過線上編輯器時使用） |
 
@@ -64,12 +95,15 @@ api/
     "push": "clasp push",
     "watch": "clasp push --watch",
     "check-deploy-id": "grep -qE '^DEPLOYMENT_ID=AKfy' .env.local 2>/dev/null || (echo '❌ …' && exit 1)",
-    "deploy": "yarn check-deploy-id && clasp push && clasp deploy -i $(grep DEPLOYMENT_ID .env.local | cut -d= -f2)"
+    "deploy": "yarn check-deploy-id && clasp push && clasp deploy -i $(grep '^DEPLOYMENT_ID=' .env.local | cut -d= -f2)",
+    "check-staging-id": "…（同上，檢查 STAGING_DEPLOYMENT_ID）",
+    "deploy:staging": "yarn check-staging-id && clasp push && clasp deploy -i $(grep '^STAGING_DEPLOYMENT_ID=' .env.local | cut -d= -f2)"
   }
 }
 ```
 
-- 正式部署 ID 存在 `api/.env.local` 的 `DEPLOYMENT_ID`，不提交到 Git。`check-deploy-id` 會在未設定時中止，避免 `-i` 帶空值而建立新部署。
+- 正式部署 ID 存在 `api/.env.local` 的 `DEPLOYMENT_ID`，測試部署 ID（描述為 `staging`）存在 `STAGING_DEPLOYMENT_ID`，皆不提交到 Git。`check-*` 會在未設定時中止，避免 `-i` 帶空值而建立新部署。
+- `grep` 必須寫成 `'^DEPLOYMENT_ID='` 錨定行首，否則會同時抓到 `STAGING_DEPLOYMENT_ID`。
 - 舊部署 ID 曾出現在 Git 歷史中，該部署已封存。API 網址仍可從前端打包後的 JS 看到，因此 `checkAuth()` 必須在試算表放入真實資料**之前**完成。
 
 ### `/exec` 與 `/dev`
@@ -80,7 +114,8 @@ api/
 | 更新方式 | `yarn deploy` | `yarn push` 後立即生效 |
 | 存取 | 任何人，不需登入 | 僅限有編輯權且已登入的 Google 帳號 |
 
-- 開發流程：`yarn push` → 用已登入的瀏覽器開 `/dev?action=…` 測試 → `yarn deploy`。
+- 開發流程：`yarn push` → 用已登入的瀏覽器開 `/dev?action=…` 測試 → `yarn deploy:staging` → 前端 `yarn dev:staging` 驗證 → merge 後使用者執行 `yarn deploy`。
+- 測試部署與正式部署是兩個獨立的 `/exec`，各自綁定固定版本；`clasp push` 與 `yarn deploy:staging` 都不影響正式部署。兩者目前讀寫**同一份試算表**，放入真實資料後需改用測試試算表。
 - 前端 `VITE_API_URL` **一定用 `/exec`**；`/dev` 會被導向 Google 登入頁，前端呼叫不了。
 - POST 無法在網址列測試，用 `test_xxx()` 函式在線上編輯器執行。
 
@@ -172,6 +207,7 @@ api/
 ## 前端注意事項
 
 - API 網址放在 `.env.local` 的 `VITE_API_URL`（不可提交到 Git；範本為 `web/.env.example`）
+  - 測試部署網址放在 `web/.env.staging.local`，以 `yarn dev:staging`（`vite --mode staging`）啟動時優先採用
 - GitHub Pages 無伺服器端路由：使用 `HashRouter`（從 `react-router` 匯入），`vite.config.ts` 的 `base` 為 `/project-gshop-erp/`
   - `base` 下引用 `public/` 檔案不可寫絕對路徑 `/xxx`；在程式中用 `import` 或 `import.meta.env.BASE_URL`
   - 目前 `App.tsx` 只有首頁路由，顯示 `ApiTest.tsx` 連線測試

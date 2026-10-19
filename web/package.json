@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:staging": "vite --mode staging",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"
