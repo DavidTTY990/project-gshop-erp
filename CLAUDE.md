@@ -9,15 +9,15 @@
 
 - **資料庫**：Google Sheets（8 張分頁）
 - **後端**：Google Apps Script 網頁應用程式（`doGet` / `doPost`），位於 `api/`，以 clasp 管理與部署
-- **前端**：Vite + React + TypeScript（啟用 React Compiler，以 oxlint 檢查），部署於 GitHub Pages
-- **套件管理**：前後端一律使用 **yarn**，不要使用 npm（`api/` 為 yarn 4，`nodeLinker: node-modules`）
+- **前端**：Vite + React + TypeScript（啟用 React Compiler，以 oxlint 檢查）、react-router（`HashRouter`），以 GitHub Actions 部署到 GitHub Pages
+- **套件管理**：前後端一律使用 **yarn 4.12**（corepack，`packageManager` 欄位），不要使用 npm；兩邊都設定 `nodeLinker: node-modules`
 
 ## 目前進度
 
 - [x] Google Sheets schema 已建立
 - [x] 前端已能連線到 Apps Script 網頁應用程式
 - [x] `api/` 已用 clasp clone 下線上腳本（目前只有 `src/main.js` 中學習用的 `readSheet`、`doGet` 範例：`?action=ping`、`?action=customers`）
-- [ ] 確認 `yarn deploy` 流程可更新既有部署且網址不變
+- [x] 確認 `yarn deploy` 流程可更新既有部署且網址不變
 - [ ] 撰寫正式後端共用骨架（`doPost` 路由、密碼檢查、日期格式化、`LockService`、統一回應格式）
 - [ ] 實作客戶、機器、訂單、發票、維修各 API
 - [ ] 前端各頁面
@@ -31,6 +31,7 @@ api/
 ├── .clasp.json        ← 指令碼 ID 與 rootDir（rootDir 固定為 src）
 ├── .claspignore       ← 推送白名單（路徑以 rootDir 為基準）
 ├── .yarnrc.yml        ← nodeLinker: node-modules
+├── .env.local         ← DEPLOYMENT_ID（不提交；範本為 .env.example）
 ├── package.json       ← clasp 為 devDependency
 ├── yarn.lock
 ├── .yarn/             ← yarn 狀態檔，不提交
@@ -49,9 +50,9 @@ api/
 
 | 指令 | 用途 |
 |---|---|
-| `yarn push` | 推送程式碼（`/dev` 測試網址立即生效） |
+| `yarn push` | 推送程式碼（`/dev` 測試網址立即生效，`/exec` 不變） |
 | `yarn watch` | 存檔自動推送 |
-| `yarn deploy` | 推送並更新正式部署（網址不變） |
+| `yarn deploy` | 推送、建立新版本並更新正式部署 `/exec`（網址不變） |
 | `yarn clasp deployments` | 列出部署與其 ID |
 | `yarn clasp pull` | 把線上版本拉回本機（僅在有人改過線上編輯器時使用） |
 
@@ -62,12 +63,26 @@ api/
   "scripts": {
     "push": "clasp push",
     "watch": "clasp push --watch",
-    "deploy": "clasp push && clasp deploy -i <部署ID>"
+    "check-deploy-id": "grep -qE '^DEPLOYMENT_ID=AKfy' .env.local 2>/dev/null || (echo '❌ …' && exit 1)",
+    "deploy": "yarn check-deploy-id && clasp push && clasp deploy -i $(grep DEPLOYMENT_ID .env.local | cut -d= -f2)"
   }
 }
 ```
 
-> 實際的 `package.json` 中寫有部署 ID。repo 為公開，任何人都能據此組出 API 網址，因此 `checkAuth()` 必須在試算表放入真實資料**之前**完成。
+- 正式部署 ID 存在 `api/.env.local` 的 `DEPLOYMENT_ID`，不提交到 Git。`check-deploy-id` 會在未設定時中止，避免 `-i` 帶空值而建立新部署。
+- 舊部署 ID 曾出現在 Git 歷史中，該部署已封存。API 網址仍可從前端打包後的 JS 看到，因此 `checkAuth()` 必須在試算表放入真實資料**之前**完成。
+
+### `/exec` 與 `/dev`
+
+| | `/exec`（正式部署） | `/dev`（測試部署，`@HEAD`） |
+|---|---|---|
+| 執行的程式碼 | 固定版本 | 最新推送的程式碼 |
+| 更新方式 | `yarn deploy` | `yarn push` 後立即生效 |
+| 存取 | 任何人，不需登入 | 僅限有編輯權且已登入的 Google 帳號 |
+
+- 開發流程：`yarn push` → 用已登入的瀏覽器開 `/dev?action=…` 測試 → `yarn deploy`。
+- 前端 `VITE_API_URL` **一定用 `/exec`**；`/dev` 會被導向 Google 登入頁，前端呼叫不了。
+- POST 無法在網址列測試，用 `test_xxx()` 函式在線上編輯器執行。
 
 ### 重要規則
 
@@ -99,7 +114,7 @@ api/
 
 ### Git
 
-- 可提交：`src/`、`.clasp.json`、`.claspignore`、`.yarnrc.yml`、`package.json`、`yarn.lock`
+- 可提交：`src/`、`.clasp.json`、`.claspignore`、`.yarnrc.yml`、`.env.example`、`package.json`、`yarn.lock`
 - 不可提交：`node_modules/`、`.yarn/`（根目錄 `.gitignore` 已排除）、任何密碼。clasp 登入憑證在家目錄（`~/.clasprc.json`），不在 repo 內。
 - 共用密碼只存在線上的 Script Properties（`API_KEY`）。
 
@@ -156,9 +171,14 @@ api/
 
 ## 前端注意事項
 
-- API 網址放在 `.env.local` 的 `VITE_API_URL`（不可提交到 Git）
-- GitHub Pages 無伺服器端路由：使用 `HashRouter`，並在 `vite.config.ts` 設定 `base` 為 repo 名稱（`/project-gshop-erp/`）
-  - 目前尚未完成：未安裝 router、未設定 `base`，`App.tsx` 仍是 Vite 範本加上 `ApiTest.tsx` 連線測試
+- API 網址放在 `.env.local` 的 `VITE_API_URL`（不可提交到 Git；範本為 `web/.env.example`）
+- GitHub Pages 無伺服器端路由：使用 `HashRouter`（從 `react-router` 匯入），`vite.config.ts` 的 `base` 為 `/project-gshop-erp/`
+  - `base` 下引用 `public/` 檔案不可寫絕對路徑 `/xxx`；在程式中用 `import` 或 `import.meta.env.BASE_URL`
+  - 目前 `App.tsx` 只有首頁路由，顯示 `ApiTest.tsx` 連線測試
+- 部署：`.github/workflows/deploy-web.yml`，push 到 `master` 且 `web/` 有變更時自動建置並部署
+  - CI 的 API 網址來自 repo 的 Actions **Variable** `VITE_API_URL`（不是 Secret；網址本來就會出現在打包後的 JS）
+  - repo 的 Settings → Pages → Source 需設為「GitHub Actions」
+  - 本機確認：`yarn build && yarn preview`，開 `http://localhost:4173/project-gshop-erp/`
 - Apps Script 回應約 1～3 秒，所有請求都需要載入狀態
 - 介面文字為繁體中文；英文欄位名稱需對應中文標籤
 - 店員可能在櫃台用手機或平板操作，版面需支援小螢幕

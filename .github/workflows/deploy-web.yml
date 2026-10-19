@@ -1,0 +1,56 @@
+# 前端部署到 GitHub Pages：master 上 web/ 有變更時自動執行，也可在 Actions 頁面手動執行
+name: Deploy web to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'web/**'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 依 package.json 的 packageManager 啟用 yarn 4
+      - run: corepack enable
+
+      - run: yarn install --immutable
+
+      # API 網址設定在 repo 的 Settings → Secrets and variables → Actions → Variables
+      - run: yarn build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
