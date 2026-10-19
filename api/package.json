@@ -1,0 +1,12 @@
+{
+  "name": "api",
+  "packageManager": "yarn@4.12.0",
+  "devDependencies": {
+    "@google/clasp": "^3.4.1"
+  },
+  "scripts": {
+    "push": "clasp push",
+    "watch": "clasp push --watch",
+    "deploy": "clasp push && clasp deploy -i AKfycby7ozhQ7kEC4VPejlXAKFxfeXz0ghIK_yHHpryFNhOJpJmdWbDHuQHgpbfJc4w49uc"
+  }
+}
