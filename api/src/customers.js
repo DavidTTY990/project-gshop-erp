@@ -43,32 +43,9 @@ function assertPhoneUnique(customers, phone, selfId) {
   }
 }
 
-/**
- * 依關鍵字搜尋（姓名、LINE ID 包含關鍵字；關鍵字含數字時也比對電話），新到舊排列並分頁。
- * 無關鍵字時列出全部客人。
- */
-function listCustomers({ keyword, page }) {
-  const kw = String(keyword || '').trim().toLowerCase();
-  const digits = normalizePhone(kw);
-  const pageNo = Math.max(1, Number(page) || 1);
-
-  const matched = readCustomers()
-    .map((c, i) => ({ c, i }))
-    .filter(({ c }) =>
-      !kw ||
-      String(c.name).toLowerCase().includes(kw) ||
-      c.line_id.toLowerCase().includes(kw) ||
-      (digits && normalizePhone(c.phone).includes(digits)))
-    // created_at 新到舊；相同時後加入的列在前
-    .sort((a, b) => (new Date(b.c.created_at) - new Date(a.c.created_at)) || (b.i - a.i))
-    .map(({ c }) => c);
-
-  return {
-    items: matched.slice((pageNo - 1) * PAGE_SIZE, pageNo * PAGE_SIZE),
-    total: matched.length,
-    page: pageNo,
-    pageSize: PAGE_SIZE,
-  };
+/** 全部客人（依試算表列順序）；搜尋、排序與分頁由前端處理 */
+function allCustomers() {
+  return readCustomers();
 }
 
 function getCustomer({ id }) {
@@ -105,8 +82,8 @@ function updateCustomer(params) {
   });
 }
 
-function test_listCustomers() {
-  console.log(JSON.stringify(listCustomers({ keyword: '', page: 1 }), null, 2));
+function test_allCustomers() {
+  console.log(JSON.stringify(allCustomers(), null, 2));
 }
 
 function test_createCustomer() {

@@ -92,7 +92,7 @@ export default function CustomerList({ data, isPending, isFetching, onPageChange
               variant="outline"
               size="icon-lg"
               aria-label="上一頁"
-              disabled={data.page <= 1 || isFetching}
+              disabled={data.page <= 1}
               onClick={() => onPageChange(data.page - 1)}
             >
               <ChevronLeftIcon />
@@ -104,7 +104,7 @@ export default function CustomerList({ data, isPending, isFetching, onPageChange
               variant="outline"
               size="icon-lg"
               aria-label="下一頁"
-              disabled={data.page >= totalPages || isFetching}
+              disabled={data.page >= totalPages}
               onClick={() => onPageChange(data.page + 1)}
             >
               <ChevronRightIcon />
