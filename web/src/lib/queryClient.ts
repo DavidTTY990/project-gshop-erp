@@ -2,7 +2,13 @@ import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ApiError } from './apiError';
 
-const showError = (err: Error) => toast.error(err.message);
+/** 由表單自行顯示在欄位旁的錯誤，不另跳通知 */
+const INLINE_ERROR_CODES = new Set(['DUPLICATE_PHONE']);
+
+const showError = (err: Error) => {
+  if (err instanceof ApiError && err.code && INLINE_ERROR_CODES.has(err.code)) return;
+  toast.error(err.message);
+};
 
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({ onError: showError }),

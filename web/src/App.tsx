@@ -4,6 +4,9 @@ import Layout from '@/components/Layout';
 import RequireAuth from '@/components/RequireAuth';
 import { Toaster } from '@/components/ui/sonner';
 import { queryClient } from '@/lib/queryClient';
+import CustomerDetailPage from '@/pages/CustomerDetailPage';
+import CustomerNewPage from '@/pages/CustomerNewPage';
+import HomePage from '@/pages/HomePage';
 import LoginPage from '@/pages/LoginPage';
 import PlaceholderPage from '@/pages/PlaceholderPage';
 
@@ -16,9 +19,9 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
-              <Route path="/" element={<PlaceholderPage title="首頁" />} />
-              <Route path="/customers/new" element={<PlaceholderPage title="新增客人" />} />
-              <Route path="/customers/:id" element={<PlaceholderPage title="客人資料" />} />
+              <Route path="/" element={<HomePage />} />
+              <Route path="/customers/new" element={<CustomerNewPage />} />
+              <Route path="/customers/:id" element={<CustomerDetailPage />} />
               <Route path="/orders/new" element={<PlaceholderPage title="新增訂單" />} />
               <Route path="/orders/:id" element={<PlaceholderPage title="訂單詳情" />} />
               <Route path="/repairs/new" element={<PlaceholderPage title="新增維修單" />} />

@@ -5,7 +5,7 @@ import { clearSession, getSession, useSession, type Auth } from './session';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-type ApiResponse<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
+type ApiResponse<T> = { ok: true; data: T } | { ok: false; error: string; code?: string; data?: unknown };
 
 /**
  * 呼叫後端。一律 POST，Content-Type 用 text/plain 以避開 CORS preflight。
@@ -33,7 +33,7 @@ export async function callApi<T>(action: string, params?: object, auth?: Auth): 
     queryClient.clear();
     throw new ApiError('登入已失效，請重新登入', 'AUTH');
   }
-  throw new ApiError(json.error, json.code);
+  throw new ApiError(json.error, json.code, json.data);
 }
 
 /** Settings 分頁的下拉選項，例：{ staff: ['小明'], category: [...] } */
