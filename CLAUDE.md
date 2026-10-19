@@ -9,14 +9,14 @@
 
 - **資料庫**：Google Sheets（8 張分頁）
 - **後端**：Google Apps Script 網頁應用程式（`doGet` / `doPost`），位於 `api/`，以 clasp 管理與部署
-- **前端**：Vite + React，部署於 GitHub Pages
-- **套件管理**：前後端一律使用 **yarn**，不要使用 npm
+- **前端**：Vite + React + TypeScript（啟用 React Compiler，以 oxlint 檢查），部署於 GitHub Pages
+- **套件管理**：前後端一律使用 **yarn**，不要使用 npm（`api/` 為 yarn 4，`nodeLinker: node-modules`）
 
 ## 目前進度
 
 - [x] Google Sheets schema 已建立
 - [x] 前端已能連線到 Apps Script 網頁應用程式
-- [x] `api/` 已用 clasp clone 下線上腳本（目前只有學習用的 `readSheet`、`doGet` 範例：`?action=ping`、`?action=customers`）
+- [x] `api/` 已用 clasp clone 下線上腳本（目前只有 `src/main.js` 中學習用的 `readSheet`、`doGet` 範例：`?action=ping`、`?action=customers`）
 - [ ] 確認 `yarn deploy` 流程可更新既有部署且網址不變
 - [ ] 撰寫正式後端共用骨架（`doPost` 路由、密碼檢查、日期格式化、`LockService`、統一回應格式）
 - [ ] 實作客戶、機器、訂單、發票、維修各 API
@@ -29,15 +29,21 @@
 ```
 api/
 ├── .clasp.json        ← 指令碼 ID 與 rootDir（rootDir 固定為 src）
+├── .claspignore       ← 推送白名單（路徑以 rootDir 為基準）
+├── .yarnrc.yml        ← nodeLinker: node-modules
 ├── package.json       ← clasp 為 devDependency
+├── yarn.lock
+├── .yarn/             ← yarn 狀態檔，不提交
 ├── node_modules/
 └── src/               ← 只有這裡的檔案會被推送到 Apps Script
     ├── appsscript.json
-    └── *.js
+    └── main.js        ← doGet、jsonResponse、formatDate、readSheet
 ```
 
 - 後端程式碼資料夾**固定命名為 `src/`**。
 - 所有 clasp／yarn 指令都在 `api/` 執行。
+- 檔名使用英文；新增功能時依領域拆檔（例：`customers.js`、`repairs.js`）。Apps Script 線上檔名即本機檔名去掉副檔名，改名後 `clasp push` 會刪除線上舊檔，不影響部署網址。
+- `.claspignore` 的路徑**以 `rootDir`（`src/`）為基準**，不是以 `api/` 為基準；寫成 `!src/**` 會匹配不到任何檔案，導致 `.js` 不被推送、線上程式碼被清空。修改後先用 `yarn clasp show-file-status` 確認所有 `.js` 都在 Tracked files。
 
 ### 常用指令
 
@@ -61,6 +67,8 @@ api/
 }
 ```
 
+> 實際的 `package.json` 中寫有部署 ID。repo 為公開，任何人都能據此組出 API 網址，因此 `checkAuth()` 必須在試算表放入真實資料**之前**完成。
+
 ### 重要規則
 
 - **指令碼 ID ≠ 部署 ID**
@@ -79,6 +87,7 @@ api/
 ```json
 {
   "timeZone": "Asia/Taipei",
+  "dependencies": {},
   "runtimeVersion": "V8",
   "exceptionLogging": "STACKDRIVER",
   "webapp": {
@@ -90,8 +99,8 @@ api/
 
 ### Git
 
-- 可提交：`src/`、`.clasp.json`、`package.json`、`yarn.lock`
-- 不可提交：`node_modules/`、任何密碼。clasp 登入憑證在家目錄（`~/.clasprc.json`），不在 repo 內。
+- 可提交：`src/`、`.clasp.json`、`.claspignore`、`.yarnrc.yml`、`package.json`、`yarn.lock`
+- 不可提交：`node_modules/`、`.yarn/`（根目錄 `.gitignore` 已排除）、任何密碼。clasp 登入憑證在家目錄（`~/.clasprc.json`），不在 repo 內。
 - 共用密碼只存在線上的 Script Properties（`API_KEY`）。
 
 ## 第一階段範圍
@@ -117,6 +126,9 @@ api/
 - 選項值存中文（例：維修狀態「維修中」）
 - 金額為新台幣整數
 - 日期時間格式 `yyyy-mm-dd hh:mm`，時區 Asia/Taipei；回傳前端前先格式化，避免變成 UTC
+  - `jsonResponse()` 會把回應中所有 `Date` 經 `formatDate()` 轉成字串，所有 API 回應都必須經過它
+  - 試算表中只有日期的儲存格也會讀成 `Date`，會輸出為 `yyyy-mm-dd 00:00`
+  - 前端送來的日期字串寫入前也要確認格式一致（新增寫入 API 時留意）
 - 主鍵由後端產生：前綴-日期-流水號，例 `O-20261018-001`、`R-…`、`C-…`、`D-…`、`INV-…`
 - `_id`、電話、序號、發票號碼、統編皆為純文字
 
@@ -145,7 +157,8 @@ api/
 ## 前端注意事項
 
 - API 網址放在 `.env.local` 的 `VITE_API_URL`（不可提交到 Git）
-- GitHub Pages 無伺服器端路由：使用 `HashRouter`，並在 `vite.config` 設定 `base` 為 repo 名稱
+- GitHub Pages 無伺服器端路由：使用 `HashRouter`，並在 `vite.config.ts` 設定 `base` 為 repo 名稱（`/project-gshop-erp/`）
+  - 目前尚未完成：未安裝 router、未設定 `base`，`App.tsx` 仍是 Vite 範本加上 `ApiTest.tsx` 連線測試
 - Apps Script 回應約 1～3 秒，所有請求都需要載入狀態
 - 介面文字為繁體中文；英文欄位名稱需對應中文標籤
 - 店員可能在櫃台用手機或平板操作，版面需支援小螢幕

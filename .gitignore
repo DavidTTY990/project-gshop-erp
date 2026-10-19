@@ -1,4 +1,4 @@
-# 共用規則：不加前導 "/" 的規則會套用到 api/ 與 web/ 等所有子目錄
+# 共用規則：不含 "/" 的規則（如 node_modules）會套用到所有子目錄；含 "/" 的規則會錨定在根目錄，需寫成 **/ 開頭
 
 # Logs
 logs
@@ -11,10 +11,10 @@ lerna-debug.log*
 
 # Dependencies
 node_modules
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
+**/.yarn/*
+!**/.yarn/patches
+!**/.yarn/plugins
+!**/.yarn/releases
 .pnp.*
 
 # Build output

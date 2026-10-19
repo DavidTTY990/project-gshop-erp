@@ -24,9 +24,9 @@ function test_readCustomers() {
 // REST API
 /** 前端用 GET 呼叫時的入口 */
 function doGet(e) {
-  const action = e.parameter.action;
-
   try {
+    const action = e.parameter.action;
+
     if (action === 'ping') {
       return jsonResponse({ ok: true, data: { message: '連線成功', time: new Date() } });
     }
@@ -39,9 +39,23 @@ function doGet(e) {
   }
 }
 
-/** 把物件轉成 JSON 回應 */
+/** 把物件轉成 JSON 回應；所有 Date 一律轉成台北時間字串，避免前端收到 UTC */
 function jsonResponse(obj) {
+  const json = JSON.stringify(obj, function (key, value) {
+    const raw = this[key];  // value 已被 Date.toJSON() 轉成 UTC 字串，需取原始值
+    return raw instanceof Date ? formatDate(raw) : value;
+  });
   return ContentService
-    .createTextOutput(JSON.stringify(obj))
+    .createTextOutput(json)
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Date → 'yyyy-mm-dd hh:mm'（Asia/Taipei） */
+function formatDate(date) {
+  return Utilities.formatDate(date, 'Asia/Taipei', 'yyyy-MM-dd HH:mm');
+}
+
+/** 在編輯器中直接執行，確認日期格式 */
+function test_formatDate() {
+  console.log(formatDate(new Date()));
 }
