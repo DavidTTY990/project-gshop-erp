@@ -7,9 +7,9 @@
   "scripts": {
     "push": "clasp push",
     "watch": "clasp push --watch",
-    "check-deploy-id": "grep -qE '^DEPLOYMENT_ID=AKfy' .env.local 2>/dev/null || (echo '❌ 請在 api/.env.local 設定 DEPLOYMENT_ID=<正式部署ID>' && exit 1)",
+    "check-deploy-id": "grep -qE '^DEPLOYMENT_ID=AKfy' .env.local 2>/dev/null && echo '✅ 正式部署 ID 已設定' || (echo '❌ 請在 api/.env.local 設定 DEPLOYMENT_ID=<正式部署ID>' && exit 1)",
     "deploy": "yarn check-deploy-id && clasp push && clasp deploy -i $(grep '^DEPLOYMENT_ID=' .env.local | cut -d= -f2)",
-    "check-staging-id": "grep -qE '^STAGING_DEPLOYMENT_ID=AKfy' .env.local 2>/dev/null || (echo '❌ 請在 api/.env.local 設定 STAGING_DEPLOYMENT_ID=<測試部署ID>' && exit 1)",
+    "check-staging-id": "grep -qE '^STAGING_DEPLOYMENT_ID=AKfy' .env.local 2>/dev/null && echo '✅ 測試部署 ID 已設定' || (echo '❌ 請在 api/.env.local 設定 STAGING_DEPLOYMENT_ID=<測試部署ID>' && exit 1)",
     "deploy:staging": "yarn check-staging-id && clasp push && clasp deploy -i $(grep '^STAGING_DEPLOYMENT_ID=' .env.local | cut -d= -f2)"
   }
 }
