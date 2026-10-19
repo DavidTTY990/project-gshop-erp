@@ -1,0 +1,46 @@
+# 共用規則：不加前導 "/" 的規則會套用到 api/ 與 web/ 等所有子目錄
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+.pnp.*
+
+# Build output
+dist
+dist-ssr
+build
+coverage
+*.tsbuildinfo
+
+# Env
+.env
+.env.*
+!.env.example
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ---- api (Google Apps Script / clasp) ----
+# clasp 登入憑證，絕不能進版控
+.clasprc.json

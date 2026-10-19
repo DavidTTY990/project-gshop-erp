@@ -1,0 +1,152 @@
+# 遊戲店 ERP（game-shop-erp）
+
+為朋友的遊戲店打造的簡易 ERP。第一階段只把「銷售訂單」與「維修紀錄」數位化保存。
+介面以**繁體中文**為主。
+
+完整 schema 文件：https://claude.ai/code/artifact/f28ed7f8-acd3-43e8-8233-f1279c84c8fb
+
+## 技術架構
+
+- **資料庫**：Google Sheets（8 張分頁）
+- **後端**：Google Apps Script 網頁應用程式（`doGet` / `doPost`），位於 `api/`，以 clasp 管理與部署
+- **前端**：Vite + React，部署於 GitHub Pages
+- **套件管理**：前後端一律使用 **yarn**，不要使用 npm
+
+## 目前進度
+
+- [x] Google Sheets schema 已建立
+- [x] 前端已能連線到 Apps Script 網頁應用程式
+- [x] `api/` 已用 clasp clone 下線上腳本（目前只有學習用的 `readSheet`、`doGet` 範例：`?action=ping`、`?action=customers`）
+- [ ] 確認 `yarn deploy` 流程可更新既有部署且網址不變
+- [ ] 撰寫正式後端共用骨架（`doPost` 路由、密碼檢查、日期格式化、`LockService`、統一回應格式）
+- [ ] 實作客戶、機器、訂單、發票、維修各 API
+- [ ] 前端各頁面
+
+## 後端（`api/`）
+
+### 資料夾結構
+
+```
+api/
+├── .clasp.json        ← 指令碼 ID 與 rootDir（rootDir 固定為 src）
+├── package.json       ← clasp 為 devDependency
+├── node_modules/
+└── src/               ← 只有這裡的檔案會被推送到 Apps Script
+    ├── appsscript.json
+    └── *.js
+```
+
+- 後端程式碼資料夾**固定命名為 `src/`**。
+- 所有 clasp／yarn 指令都在 `api/` 執行。
+
+### 常用指令
+
+| 指令 | 用途 |
+|---|---|
+| `yarn push` | 推送程式碼（`/dev` 測試網址立即生效） |
+| `yarn watch` | 存檔自動推送 |
+| `yarn deploy` | 推送並更新正式部署（網址不變） |
+| `yarn clasp deployments` | 列出部署與其 ID |
+| `yarn clasp pull` | 把線上版本拉回本機（僅在有人改過線上編輯器時使用） |
+
+`package.json` scripts：
+
+```json
+{
+  "scripts": {
+    "push": "clasp push",
+    "watch": "clasp push --watch",
+    "deploy": "clasp push && clasp deploy -i <部署ID>"
+  }
+}
+```
+
+### 重要規則
+
+- **指令碼 ID ≠ 部署 ID**
+  - 指令碼 ID：代表整個專案，已存在 `.clasp.json`，`clasp clone` 用它。
+  - 部署 ID：代表某一次對外發布，即前端 `VITE_API_URL` 中 `/s/` 與 `/exec` 之間那串，`clasp deploy -i` 用它。
+- **部署一定要帶 `-i <部署ID>`**。不帶會建立新部署並產生新網址，前端會連不上。
+- **只在本機修改程式碼**。`clasp push` 會用本機版本覆蓋線上全部程式碼。
+- **Apps Script 沒有模組系統**：所有 `.js` 檔共用全域範圍，不可使用 `import`／`export`，函式名稱不可重複。沒有 npm 套件、`fetch`（改用 `UrlFetchApp`）、`setTimeout`。
+- **讀寫試算表要批次處理**：用 `getDataRange().getValues()` 一次讀整張表、用 `setValues()` 或 `appendRow()` 寫入；不要在迴圈中逐格讀寫。
+- **把邏輯與 HTTP 分開**：例如 `createCustomer(data)` 搭配 `test_createCustomer()`，可在線上編輯器直接執行測試。
+- **`doGet` / `doPost` 外層一律包 `try/catch`**，錯誤轉成 `{ ok: false, error }` 回傳。
+- 部署後的錯誤記錄在 Apps Script 編輯器的「執行項目」頁面。
+
+### `src/appsscript.json`
+
+```json
+{
+  "timeZone": "Asia/Taipei",
+  "runtimeVersion": "V8",
+  "exceptionLogging": "STACKDRIVER",
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "ANYONE_ANONYMOUS"
+  }
+}
+```
+
+### Git
+
+- 可提交：`src/`、`.clasp.json`、`package.json`、`yarn.lock`
+- 不可提交：`node_modules/`、任何密碼。clasp 登入憑證在家目錄（`~/.clasprc.json`），不在 repo 內。
+- 共用密碼只存在線上的 Script Properties（`API_KEY`）。
+
+## 第一階段範圍
+
+- 包含：客戶、機器、銷售訂單與明細、發票、維修單與維修紀錄
+- 不包含：庫存管理、商品主檔、二手收購、部分退貨（退貨只做整筆退）
+
+## Schema 摘要
+
+第 1 列為英文欄位名稱；程式一律依標題名稱找欄位，不依賴欄位位置。
+
+- **Customers**：customer_id, name, phone, line_id, note, created_at, updated_at
+- **Devices**：device_id, serial_no, device_type, brand, device_model, note, created_at, updated_at
+- **Orders**：order_id, customer_id, order_date, subtotal, discount, total, payment_method, status, returned_at, return_reason, staff, note, created_at, updated_at
+- **OrderItems**：item_id, order_id, invoice_id, product_name, category, platform, condition, unit_price, qty, line_total, note
+- **Invoices**：invoice_id, invoice_no, source_type, source_id, invoice_date, amount, buyer_tax_id, invoice_status, note, created_at, updated_at
+- **Repairs**：repair_id, customer_id, device_id, received_at, accessories, intake_condition, issue, diagnosis, status, quote_amount, final_amount, deposit, is_paid, estimated_done_date, completed_at, picked_up_at, technician, note, created_at, updated_at
+- **RepairLogs**：log_id, repair_id, status, note, staff, created_at
+- **Settings**：下拉選項清單（category, platform, condition, payment_method, order_status, repair_status, source_type, invoice_status, device_type, brand）
+
+## 資料慣例
+
+- 選項值存中文（例：維修狀態「維修中」）
+- 金額為新台幣整數
+- 日期時間格式 `yyyy-mm-dd hh:mm`，時區 Asia/Taipei；回傳前端前先格式化，避免變成 UTC
+- 主鍵由後端產生：前綴-日期-流水號，例 `O-20261018-001`、`R-…`、`C-…`、`D-…`、`INV-…`
+- `_id`、電話、序號、發票號碼、統編皆為純文字
+
+## 業務規則（後端負責）
+
+- `line_total = unit_price × qty`；`subtotal` 為明細加總；`total = subtotal − discount`
+- 一筆訂單可有多張發票；每個品項只屬於一張發票（`OrderItems.invoice_id`）；同一品項不可拆到兩張發票
+- 銷售發票的 `amount` 為所屬品項 `line_total` 加總
+- 一筆維修單只對應一張發票（`source_type` = 維修）
+- `invoice_no` 格式規則待確認，目前試算表與後端皆不做驗證，可留空
+- 退貨：訂單 `status` 改「已退貨」並填 `returned_at`、`return_reason`，發票改「作廢」或「折讓」
+- `serial_no` 正規化（大寫、去空白與連字號），有填則唯一
+- Devices 不記錄客戶；「客人送修過哪些機器」由 Repairs 的 `customer_id` + `device_id` 查出
+- 建立維修單時，先列出該客人過去送修過的機器供選擇，避免重複建立
+- 每次變更 `Repairs.status` 同時新增一筆 RepairLogs
+- 寫入時使用 `LockService` 避免同時寫入衝突
+
+## API 慣例
+
+- 回應格式一律為 `{ ok: true, data }` 或 `{ ok: false, error }`（Apps Script 無法設定 HTTP 狀態碼）
+- 讀取：`GET ?action=<名稱>`
+- 寫入：`POST`，body 為 JSON 字串，但 `Content-Type` 必須是 `text/plain`，以避開 CORS preflight
+- 驗證（尚未實作）：每個請求帶共用密碼，後端與 Script Properties 中的 `API_KEY` 比對；前端讓使用者輸入一次後存在 `localStorage`。所有請求經過單一入口先呼叫 `checkAuth()`，日後可換成 Google 登入
+- 目前 API 尚無密碼保護，試算表中只放測試資料
+
+## 前端注意事項
+
+- API 網址放在 `.env.local` 的 `VITE_API_URL`（不可提交到 Git）
+- GitHub Pages 無伺服器端路由：使用 `HashRouter`，並在 `vite.config` 設定 `base` 為 repo 名稱
+- Apps Script 回應約 1～3 秒，所有請求都需要載入狀態
+- 介面文字為繁體中文；英文欄位名稱需對應中文標籤
+- 店員可能在櫃台用手機或平板操作，版面需支援小螢幕
+- repo 為公開，不可放入真實客戶資料或任何密碼
