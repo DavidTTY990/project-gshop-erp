@@ -50,8 +50,10 @@ cd api && yarn deploy
 - [x] 確認 `yarn deploy` 流程可更新既有部署且網址不變
 - [x] 後端共用骨架（`doPost` 路由、`checkAuth`、日期格式化、`withLock`、統一回應格式）
 - [x] 登入頁（帳密＋選擇店員）、共用版面、路由保護；其餘頁面為「建置中」
-- [ ] 實作客戶、機器、訂單、發票、維修各 API
-- [ ] 前端各頁面（順序：客人 → 維修 → 訂單 → 首頁搜尋）
+- [x] 客人：API（列表搜尋、查詢、新增、編輯）、新增頁、資料頁（基本資料檢視與編輯）、首頁暫放客人搜尋
+- [ ] 維修（含機器、RepairLogs；客人資料頁補「歷史維修」「送修過的機器」）
+- [ ] 訂單（含明細、發票、退貨；客人資料頁補「歷史訂單」）
+- [ ] 首頁搜尋（訂單／維修／客人分頁；現有客人搜尋成為「客人」分頁）
 
 ## 後端（`api/`）
 
@@ -71,8 +73,9 @@ api/
     ├── appsscript.json
     ├── main.js        ← doGet（僅 ping）、doPost、handleRequest、ACTIONS 路由表
     ├── auth.js        ← checkAuth
-    ├── utils.js       ← readSheet、jsonResponse、formatDate、withLock
-    └── settings.js    ← getSettings
+    ├── utils.js       ← readSheet、jsonResponse、formatDate、withLock、AppError、appendRecord、updateRecord、nextId、PAGE_SIZE
+    ├── settings.js    ← getSettings
+    └── customers.js   ← listCustomers、getCustomer、createCustomer、updateCustomer
 ```
 
 - 後端程式碼資料夾**固定命名為 `src/`**。
@@ -131,7 +134,9 @@ api/
 - **部署一定要帶 `-i <部署ID>`**。不帶會建立新部署並產生新網址，前端會連不上。
 - **只在本機修改程式碼**。`clasp push` 會用本機版本覆蓋線上全部程式碼。
 - **Apps Script 沒有模組系統**：所有 `.js` 檔共用全域範圍，不可使用 `import`／`export`，函式名稱不可重複。沒有 npm 套件、`fetch`（改用 `UrlFetchApp`）、`setTimeout`。
-- **讀寫試算表要批次處理**：用 `getDataRange().getValues()` 一次讀整張表、用 `setValues()` 或 `appendRow()` 寫入；不要在迴圈中逐格讀寫。
+- **讀寫試算表要批次處理**：用 `getDataRange().getValues()` 一次讀整張表；寫入一律用 `appendRecord()`／`updateRecord()`（依標題寫整列，字串設純文字、`Date` 設日期時間、數字維持數字，避免電話開頭的 0 被吃掉）；不要在迴圈中逐格讀寫。
+- **`ACTIONS` 登記時用箭頭函式**（`p => createCustomer(p)`）：各檔案依序載入，`main.js` 執行時其他檔案的函式可能尚未定義。
+- 寫入函式在 `withLock()` 內完成「讀取 → 檢查 → 產生主鍵（`nextId`）→ 寫入」，只接受白名單欄位。
 - **把邏輯與 HTTP 分開**：例如 `createCustomer(data)` 搭配 `test_createCustomer()`，可在線上編輯器直接執行測試。
 - **`doGet` / `doPost` 外層一律包 `try/catch`**，錯誤轉成 `{ ok: false, error }` 回傳。
 - 部署後的錯誤記錄在 Apps Script 編輯器的「執行項目」頁面。
@@ -195,6 +200,7 @@ api/
 - `invoice_no` 格式規則待確認，目前試算表與後端皆不做驗證，可留空
 - 退貨：訂單 `status` 改「已退貨」並填 `returned_at`、`return_reason`，發票改「作廢」或「折讓」
 - `serial_no` 正規化（大寫、去空白與連字號），有填則唯一
+- 客人：`name` 必填，`phone`／`line_id` 至少一項；`phone` 只存數字（8～10 碼），有填則唯一（重複回傳 `DUPLICATE_PHONE` 與既有客人）；前端顯示時手機格式化為 `0912-345-678`；不提供刪除
 - Devices 不記錄客戶；「客人送修過哪些機器」由 Repairs 的 `customer_id` + `device_id` 查出
 - 建立維修單時，先列出該客人過去送修過的機器供選擇，避免重複建立
 - 每次變更 `Repairs.status` 同時新增一筆 RepairLogs
@@ -202,12 +208,14 @@ api/
 
 ## API 慣例
 
-- 回應格式一律為 `{ ok: true, data }` 或 `{ ok: false, error }`（Apps Script 無法設定 HTTP 狀態碼）
+- 回應格式一律為 `{ ok: true, data }` 或 `{ ok: false, error, code?, data? }`（Apps Script 無法設定 HTTP 狀態碼）
+  - 業務錯誤丟 `new AppError(message, code, data)`，前端以 `code` 判斷（`AUTH`、`VALIDATION`、`NOT_FOUND`、`DUPLICATE_PHONE`）；需在欄位旁顯示的 code 列在前端 `queryClient.ts` 的 `INLINE_ERROR_CODES`，不另跳通知
+  - 列表 API 回傳 `{ items, total, page, pageSize }`，每頁 `PAGE_SIZE`（10）筆
 - 讀寫一律 `POST`（避免密碼出現在網址），body 為 JSON 字串 `{ action, auth: { user, key }, params }`，`Content-Type` 必須是 `text/plain`，以避開 CORS preflight
   - 唯一的 GET 是不需驗證的 `?action=ping`，用來確認後端是否正常
   - 新增 API：寫好處理函式（接收 `params`），在 `main.js` 的 `ACTIONS` 登記
 - 驗證：`doPost` → `handleRequest` 先呼叫 `checkAuth()`，與 Script Properties 的 `API_USER`、`API_KEY` 比對；失敗時延遲 1 秒並回傳 `{ ok: false, error: '帳號或密碼錯誤', code: 'AUTH' }`。日後可換成 Google 登入
-- 已有的 action：`login`（只驗證帳密）、`settings`（回傳 `{ staff: [...], category: [...], ... }`）
+- 已有的 action：`login`（只驗證帳密）、`settings`（回傳 `{ staff: [...], category: [...], ... }`）、`listCustomers`（`{ keyword, page }`）、`getCustomer`（`{ id }`）、`createCustomer`、`updateCustomer`（`{ id, name, phone, line_id, note }`）
 
 ## 前端注意事項
 
@@ -228,5 +236,6 @@ api/
   - 自動帶入已登入的帳密；收到 `AUTH` 會清除登入狀態並導回登入頁
   - 錯誤由 `queryClient` 統一以 sonner 通知顯示；只重試網路錯誤
   - 下拉選項用 `useSettings()`（每次開啟網頁讀取一次）
+- 詳情頁的「返回」：連到詳情頁時在 router `state` 帶 `BackState`（`{ from: 來源網址, label: '回搜尋結果' }`，見 `src/lib/navigation.ts`），詳情頁用 `<BackButton fallback fallbackLabel />`；不用 `navigate(-1)`（直接開網址時會離開網站）
 - 登入狀態（`src/lib/session.ts`）：帳密與目前店員存在 `localStorage`，按「登出」才清除；店員可在頁首切換，新增訂單／維修時用來帶入 `staff`、`technician`
 - repo 為公開，不可放入真實客戶資料或任何密碼

@@ -1,13 +1,18 @@
 /**
  * API 入口。
  * - 讀寫一律 POST，body 為 JSON 字串：{ action, auth: { user, key }, params }
- * - 回應：{ ok: true, data } | { ok: false, error, code? }
+ * - 回應：{ ok: true, data } | { ok: false, error, code?, data? }
  */
 
 /** action → 處理函式（皆接收 params 物件）；新增 API 時在此登記 */
 const ACTIONS = {
   login: () => null,
   settings: () => getSettings(),
+  // 用箭頭函式延後取用：各檔案依序載入，此時其他檔案的函式可能尚未定義
+  listCustomers: p => listCustomers(p),
+  getCustomer: p => getCustomer(p),
+  createCustomer: p => createCustomer(p),
+  updateCustomer: p => updateCustomer(p),
 };
 
 /** 不需驗證的健康檢查：瀏覽器開 /exec?action=ping */
@@ -39,7 +44,13 @@ function handleRequest({ action, auth, params }) {
   }
   const handler = ACTIONS[action];
   if (!handler) return { ok: false, error: `未知的 action：${action}` };
-  return { ok: true, data: handler(params || {}) };
+  try {
+    return { ok: true, data: handler(params || {}) };
+  } catch (err) {
+    // 業務錯誤（AppError）帶 code 與 data 給前端判斷；其餘錯誤交給 doPost 處理
+    if (err instanceof AppError) return { ok: false, error: err.message, code: err.code, data: err.data };
+    throw err;
+  }
 }
 
 /** 在編輯器中執行：以 Script Properties 中的帳密呼叫 settings */

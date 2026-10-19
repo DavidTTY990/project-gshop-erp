@@ -52,3 +52,62 @@ function withLock(fn) {
     lock.releaseLock();
   }
 }
+
+/** 列表 API 每頁筆數 */
+const PAGE_SIZE = 10;
+
+/** 前端可判斷的業務錯誤，例：new AppError('此電話已登記', 'DUPLICATE_PHONE', { customer_id }) */
+class AppError extends Error {
+  constructor(message, code, data) {
+    super(message);
+    this.code = code;
+    this.data = data;
+  }
+}
+
+/**
+ * 依第 1 列標題把物件寫入第 rowIndex 列（1 起算）。
+ * 先設定儲存格格式再寫值：字串設為純文字（保留電話開頭的 0），Date 設為日期時間，數字維持數字。
+ */
+function writeRecord(sheet, headers, rowIndex, obj) {
+  const values = headers.map(h => (obj[h] === undefined || obj[h] === null ? '' : obj[h]));
+  const formats = values.map(v => {
+    if (v instanceof Date) return 'yyyy-mm-dd hh:mm';
+    if (typeof v === 'number') return '0';
+    return '@';
+  });
+  const range = sheet.getRange(rowIndex, 1, 1, headers.length);
+  range.setNumberFormats([formats]);
+  range.setValues([values]);
+}
+
+/** 新增一列（需在 withLock 內呼叫） */
+function appendRecord(sheetName, obj) {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
+  if (!sheet) throw new Error(`找不到分頁：${sheetName}`);
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  writeRecord(sheet, headers, sheet.getLastRow() + 1, obj);
+}
+
+/** 以 idField 找到該列並合併 patch 後整列寫回，回傳更新後的物件（需在 withLock 內呼叫） */
+function updateRecord(sheetName, idField, id, patch) {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
+  if (!sheet) throw new Error(`找不到分頁：${sheetName}`);
+  const [headers, ...rows] = sheet.getDataRange().getValues();
+  const col = headers.indexOf(idField);
+  const i = rows.findIndex(row => String(row[col]) === String(id));
+  if (i === -1) return null;
+  const record = { ...Object.fromEntries(headers.map((h, j) => [h, rows[i][j]])), ...patch };
+  writeRecord(sheet, headers, i + 2, record);  // +2：標題列 + 1 起算
+  return record;
+}
+
+/** 產生主鍵：前綴-yyyymmdd-流水號，例 C-20261019-001（需在 withLock 內呼叫） */
+function nextId(prefix, existingIds) {
+  const head = `${prefix}-${Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyyMMdd')}-`;
+  const max = existingIds
+    .map(String)
+    .filter(id => id.startsWith(head))
+    .reduce((m, id) => Math.max(m, Number(id.slice(head.length)) || 0), 0);
+  return head + String(max + 1).padStart(3, '0');
+}
