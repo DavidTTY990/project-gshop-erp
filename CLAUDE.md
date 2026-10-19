@@ -41,6 +41,7 @@ cd api && yarn deploy
 ```
 
 - **務必先切回 `master` 並 pull**：`clasp push` 推送的是本機目前的檔案，不是 GitHub 上的 `master`。
+- 前端依賴新後端 action 時，merge 後要立刻執行 `yarn deploy`；GitHub Actions 部署前端約需 1～2 分鐘，在此之前完成即可。
 
 ## 目前進度
 
@@ -51,6 +52,7 @@ cd api && yarn deploy
 - [x] 後端共用骨架（`doPost` 路由、`checkAuth`、日期格式化、`withLock`、統一回應格式）
 - [x] 登入頁（帳密＋選擇店員）、共用版面、路由保護；其餘頁面為「建置中」
 - [x] 客人：API（列表搜尋、查詢、新增、編輯）、新增頁、資料頁（基本資料檢視與編輯）、首頁暫放客人搜尋
+- [x] 客人搜尋改為前端即時搜尋；查詢快取 1 分鐘、存檔後直接更新快取；頁首重新整理按鈕
 - [ ] 維修（含機器、RepairLogs；客人資料頁補「歷史維修」「送修過的機器」）
 - [ ] 訂單（含明細、發票、退貨；客人資料頁補「歷史訂單」）
 - [ ] 首頁搜尋（訂單／維修／客人分頁；現有客人搜尋成為「客人」分頁）
@@ -75,7 +77,7 @@ api/
     ├── auth.js        ← checkAuth
     ├── utils.js       ← readSheet、jsonResponse、formatDate、withLock、AppError、appendRecord、updateRecord、nextId、PAGE_SIZE
     ├── settings.js    ← getSettings
-    └── customers.js   ← listCustomers、getCustomer、createCustomer、updateCustomer
+    └── customers.js   ← allCustomers、getCustomer、createCustomer、updateCustomer
 ```
 
 - 後端程式碼資料夾**固定命名為 `src/`**。
@@ -210,12 +212,12 @@ api/
 
 - 回應格式一律為 `{ ok: true, data }` 或 `{ ok: false, error, code?, data? }`（Apps Script 無法設定 HTTP 狀態碼）
   - 業務錯誤丟 `new AppError(message, code, data)`，前端以 `code` 判斷（`AUTH`、`VALIDATION`、`NOT_FOUND`、`DUPLICATE_PHONE`）；需在欄位旁顯示的 code 列在前端 `queryClient.ts` 的 `INLINE_ERROR_CODES`，不另跳通知
-  - 列表 API 回傳 `{ items, total, page, pageSize }`，每頁 `PAGE_SIZE`（10）筆
+  - 列表 API 回傳 `{ items, total, page, pageSize }`，每頁 `PAGE_SIZE`（10）筆（客人例外：`allCustomers` 回傳全部，由前端搜尋分頁）
 - 讀寫一律 `POST`（避免密碼出現在網址），body 為 JSON 字串 `{ action, auth: { user, key }, params }`，`Content-Type` 必須是 `text/plain`，以避開 CORS preflight
   - 唯一的 GET 是不需驗證的 `?action=ping`，用來確認後端是否正常
   - 新增 API：寫好處理函式（接收 `params`），在 `main.js` 的 `ACTIONS` 登記
 - 驗證：`doPost` → `handleRequest` 先呼叫 `checkAuth()`，與 Script Properties 的 `API_USER`、`API_KEY` 比對；失敗時延遲 1 秒並回傳 `{ ok: false, error: '帳號或密碼錯誤', code: 'AUTH' }`。日後可換成 Google 登入
-- 已有的 action：`login`（只驗證帳密）、`settings`（回傳 `{ staff: [...], category: [...], ... }`）、`listCustomers`（`{ keyword, page }`）、`getCustomer`（`{ id }`）、`createCustomer`、`updateCustomer`（`{ id, name, phone, line_id, note }`）
+- 已有的 action：`login`（只驗證帳密）、`settings`（回傳 `{ staff: [...], category: [...], ... }`）、`allCustomers`（全部客人，依試算表列順序）、`getCustomer`（`{ id }`）、`createCustomer`、`updateCustomer`（`{ id, name, phone, line_id, note }`）
 
 ## 前端注意事項
 
@@ -236,6 +238,10 @@ api/
   - 自動帶入已登入的帳密；收到 `AUTH` 會清除登入狀態並導回登入頁
   - 錯誤由 `queryClient` 統一以 sonner 通知顯示；只重試網路錯誤
   - 下拉選項用 `useSettings()`（每次開啟網頁讀取一次）
+  - 查詢預設 `staleTime` 1 分鐘：1 分鐘內不重新讀取；過期後切回分頁或重新進入頁面時在背景更新（`settings` 為 `Infinity`）
+  - 頁首「重新整理」按鈕呼叫 `invalidateQueries()`，重新讀取目前畫面的資料（含 `settings`）
+  - 新增／編輯成功後以回傳資料 `setQueryData` 更新快取，不重新讀取
+- 客人搜尋：`useAllCustomers()` 讀取全部客人，`searchCustomers()` 在前端比對（姓名、LINE ID、電話數字）、排序（新到舊）與分頁；首頁邊打字邊搜尋，關鍵字以 `replace` 同步到網址 `?q=`。客人詳情以全部客人快取為 `initialData`，快取沒有時才呼叫 `getCustomer`
 - 詳情頁的「返回」：連到詳情頁時在 router `state` 帶 `BackState`（`{ from: 來源網址, label: '回搜尋結果' }`，見 `src/lib/navigation.ts`），詳情頁用 `<BackButton fallback fallbackLabel />`；不用 `navigate(-1)`（直接開網址時會離開網站）
 - 登入狀態（`src/lib/session.ts`）：帳密與目前店員存在 `localStorage`，按「登出」才清除；店員可在頁首切換，新增訂單／維修時用來帶入 `staff`、`technician`
 - repo 為公開，不可放入真實客戶資料或任何密碼

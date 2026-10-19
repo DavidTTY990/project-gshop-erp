@@ -9,7 +9,7 @@ const ACTIONS = {
   login: () => null,
   settings: () => getSettings(),
   // 用箭頭函式延後取用：各檔案依序載入，此時其他檔案的函式可能尚未定義
-  listCustomers: p => listCustomers(p),
+  allCustomers: () => allCustomers(),
   getCustomer: p => getCustomer(p),
   createCustomer: p => createCustomer(p),
   updateCustomer: p => updateCustomer(p),

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router';
-import { ChevronDownIcon, LogOutIcon, MenuIcon } from 'lucide-react';
+import { useIsFetching } from '@tanstack/react-query';
+import { ChevronDownIcon, LogOutIcon, MenuIcon, RefreshCwIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -66,7 +67,8 @@ export default function Layout() {
             ))}
           </nav>
 
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <RefreshButton />
             <StaffMenu />
           </div>
         </div>
@@ -95,6 +97,24 @@ function NavItem({ to, label, className, onClick }: { to: string; label: string;
     >
       {label}
     </NavLink>
+  );
+}
+
+/** 重新讀取目前畫面的資料（含下拉選項）；其他快取標為過期，下次進入時再讀 */
+function RefreshButton() {
+  const fetching = useIsFetching() > 0;
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-lg"
+      aria-label="重新整理"
+      title="重新整理"
+      disabled={fetching}
+      onClick={() => queryClient.invalidateQueries()}
+    >
+      <RefreshCwIcon className={cn('size-5', fetching && 'animate-spin')} />
+    </Button>
   );
 }
 

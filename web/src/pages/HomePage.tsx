@@ -4,29 +4,36 @@ import { PlusIcon, SearchIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import CustomerList from '@/components/CustomerList';
-import { useCustomers } from '@/lib/customers';
+import { searchCustomers, useAllCustomers } from '@/lib/customers';
 
 /**
  * 首頁：目前只有客人搜尋（之後成為首頁搜尋的「客人」分頁）。
- * 關鍵字與頁碼放在網址（?q=&page=），從客人頁返回時保留搜尋結果。
+ * 邊打字邊在前端搜尋；關鍵字與頁碼放在網址（?q=&page=），從客人頁返回時保留搜尋結果。
  */
 export default function HomePage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const keyword = searchParams.get('q') ?? '';
   const page = Number(searchParams.get('page')) || 1;
-  const [input, setInput] = useState(keyword);
-  const { data, isPending, isFetching } = useCustomers(keyword, page);
+  // 輸入框用自己的 state，避免網址更新延遲干擾中文輸入法
+  const [keyword, setKeyword] = useState(searchParams.get('q') ?? '');
+  const { data: customers, isPending, isFetching } = useAllCustomers();
+  const data = customers && searchCustomers(customers, keyword, page);
 
-  const search = (q: string, p: number) => {
+  const search = (q: string, p: number, replace: boolean) => {
     const next = new URLSearchParams();
-    if (q) next.set('q', q);
+    if (q.trim()) next.set('q', q);
     if (p > 1) next.set('page', String(p));
-    setSearchParams(next);
+    setSearchParams(next, { replace });
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleChange = (q: string) => {
+    setKeyword(q);
+    search(q, 1, true); // 打字時取代網址，不累積瀏覽紀錄
+  };
+
+  // 鍵盤上的「搜尋」只收起鍵盤
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    search(input.trim(), 1);
+    (document.activeElement as HTMLElement | null)?.blur();
   };
 
   return (
@@ -41,23 +48,20 @@ export default function HomePage() {
         </Button>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex gap-2">
+      <form onSubmit={handleSubmit} className="relative">
+        <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           type="search"
           enterKeyHint="search"
-          className="h-10"
+          className="h-10 pl-9"
           placeholder="姓名、電話或 LINE ID"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
+          value={keyword}
+          onChange={(e) => handleChange(e.target.value)}
         />
-        <Button type="submit" className="h-10 shrink-0">
-          <SearchIcon />
-          搜尋
-        </Button>
       </form>
 
-      {!keyword && <p className="-mt-2 text-sm text-muted-foreground">最近新增的客人</p>}
-      <CustomerList data={data} isPending={isPending} isFetching={isFetching} onPageChange={(p) => search(keyword, p)} />
+      {!keyword.trim() && <p className="-mt-2 text-sm text-muted-foreground">最近新增的客人</p>}
+      <CustomerList data={data} isPending={isPending} isFetching={isFetching} onPageChange={(p) => search(keyword, p, false)} />
     </div>
   );
 }

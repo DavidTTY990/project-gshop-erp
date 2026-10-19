@@ -17,7 +17,8 @@ export const queryClient = new QueryClient({
     queries: {
       // 後端錯誤（含密碼錯誤）重試也不會成功，只重試一次網路錯誤
       retry: (count, err) => err instanceof ApiError && err.code === 'NETWORK' && count < 1,
-      refetchOnWindowFocus: false,
+      // 1 分鐘內視為最新、不重新讀取；之後切回分頁或重新進入頁面時在背景更新
+      staleTime: 60_000,
     },
   },
 });
