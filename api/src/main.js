@@ -1,61 +1,51 @@
 /**
- * 讀取整張分頁，轉成物件陣列。
- * 第 1 列為欄位名稱，例：[{ customer_id: 'C-TEST-001', name: '王小明', ... }]
+ * API 入口。
+ * - 讀寫一律 POST，body 為 JSON 字串：{ action, auth: { user, key }, params }
+ * - 回應：{ ok: true, data } | { ok: false, error, code? }
  */
-function readSheet(sheetName = 'Customers') {
-  const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
-  if (!sheet) throw new Error(`找不到分頁：${sheetName}`);
 
-  // 一次讀出整張表（比逐格讀快很多）
-  const [headers, ...rows] = sheet.getDataRange().getValues();
+/** action → 處理函式（皆接收 params 物件）；新增 API 時在此登記 */
+const ACTIONS = {
+  login: () => null,
+  settings: () => getSettings(),
+};
 
-  return rows
-    .filter(row => row.some(cell => cell !== ''))           // 略過空白列
-    .map(row => Object.fromEntries(headers.map((h, i) => [h, row[i]])));
-}
-
-/** 在編輯器中直接執行，用來測試 */
-function test_readCustomers() {
-  const customers = readSheet('Customers');
-  console.log(`共 ${customers.length} 筆`);
-  console.log(JSON.stringify(customers, null, 2));
-}
-
-// REST API
-/** 前端用 GET 呼叫時的入口 */
+/** 不需驗證的健康檢查：瀏覽器開 /exec?action=ping */
 function doGet(e) {
   try {
-    const action = e.parameter.action;
-
-    if (action === 'ping') {
+    if (e.parameter.action === 'ping') {
       return jsonResponse({ ok: true, data: { message: '連線成功', time: new Date() } });
     }
-    if (action === 'customers') {
-      return jsonResponse({ ok: true, data: readSheet('Customers') });
-    }
-    return jsonResponse({ ok: false, error: `未知的 action：${action}` });
+    return jsonResponse({ ok: false, error: `未知的 action：${e.parameter.action}` });
   } catch (err) {
     return jsonResponse({ ok: false, error: err.message });
   }
 }
 
-/** 把物件轉成 JSON 回應；所有 Date 一律轉成台北時間字串，避免前端收到 UTC */
-function jsonResponse(obj) {
-  const json = JSON.stringify(obj, function (key, value) {
-    const raw = this[key];  // value 已被 Date.toJSON() 轉成 UTC 字串，需取原始值
-    return raw instanceof Date ? formatDate(raw) : value;
-  });
-  return ContentService
-    .createTextOutput(json)
-    .setMimeType(ContentService.MimeType.JSON);
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents);
+    return jsonResponse(handleRequest(body));
+  } catch (err) {
+    return jsonResponse({ ok: false, error: err.message });
+  }
 }
 
-/** Date → 'yyyy-mm-dd hh:mm'（Asia/Taipei） */
-function formatDate(date) {
-  return Utilities.formatDate(date, 'Asia/Taipei', 'yyyy-MM-dd HH:mm');
+/** 與 HTTP 分開，方便在編輯器測試 */
+function handleRequest({ action, auth, params }) {
+  if (!checkAuth(auth)) {
+    Utilities.sleep(1000); // 拖慢猜密碼
+    return { ok: false, error: '帳號或密碼錯誤', code: 'AUTH' };
+  }
+  const handler = ACTIONS[action];
+  if (!handler) return { ok: false, error: `未知的 action：${action}` };
+  return { ok: true, data: handler(params || {}) };
 }
 
-/** 在編輯器中直接執行，確認日期格式 */
-function test_formatDate() {
-  console.log(formatDate(new Date()));
+/** 在編輯器中執行：以 Script Properties 中的帳密呼叫 settings */
+function test_handleRequest() {
+  const props = PropertiesService.getScriptProperties();
+  const auth = { user: props.getProperty('API_USER'), key: props.getProperty('API_KEY') };
+  console.log(JSON.stringify(handleRequest({ action: 'settings', auth })));
+  console.log(JSON.stringify(handleRequest({ action: 'settings', auth: { user: 'x', key: 'y' } })));
 }

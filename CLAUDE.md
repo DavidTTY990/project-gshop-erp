@@ -9,7 +9,7 @@
 
 - **資料庫**：Google Sheets（8 張分頁）
 - **後端**：Google Apps Script 網頁應用程式（`doGet` / `doPost`），位於 `api/`，以 clasp 管理與部署
-- **前端**：Vite + React + TypeScript（啟用 React Compiler，以 oxlint 檢查）、react-router（`HashRouter`），以 GitHub Actions 部署到 GitHub Pages
+- **前端**：Vite + React + TypeScript（啟用 React Compiler，以 oxlint 檢查）、react-router（`HashRouter`）、Tailwind CSS v4 + shadcn/ui、TanStack Query、sonner，以 GitHub Actions 部署到 GitHub Pages
 - **套件管理**：前後端一律使用 **yarn 4.12**（corepack，`packageManager` 欄位），不要使用 npm；兩邊都設定 `nodeLinker: node-modules`
 
 ## 開發流程
@@ -46,11 +46,12 @@ cd api && yarn deploy
 
 - [x] Google Sheets schema 已建立
 - [x] 前端已能連線到 Apps Script 網頁應用程式
-- [x] `api/` 已用 clasp clone 下線上腳本（目前只有 `src/main.js` 中學習用的 `readSheet`、`doGet` 範例：`?action=ping`、`?action=customers`）
+- [x] `api/` 已用 clasp clone 下線上腳本
 - [x] 確認 `yarn deploy` 流程可更新既有部署且網址不變
-- [ ] 撰寫正式後端共用骨架（`doPost` 路由、密碼檢查、日期格式化、`LockService`、統一回應格式）
+- [x] 後端共用骨架（`doPost` 路由、`checkAuth`、日期格式化、`withLock`、統一回應格式）
+- [x] 登入頁（帳密＋選擇店員）、共用版面、路由保護；其餘頁面為「建置中」
 - [ ] 實作客戶、機器、訂單、發票、維修各 API
-- [ ] 前端各頁面
+- [ ] 前端各頁面（順序：客人 → 維修 → 訂單 → 首頁搜尋）
 
 ## 後端（`api/`）
 
@@ -68,7 +69,10 @@ api/
 ├── node_modules/
 └── src/               ← 只有這裡的檔案會被推送到 Apps Script
     ├── appsscript.json
-    └── main.js        ← doGet、jsonResponse、formatDate、readSheet
+    ├── main.js        ← doGet（僅 ping）、doPost、handleRequest、ACTIONS 路由表
+    ├── auth.js        ← checkAuth
+    ├── utils.js       ← readSheet、jsonResponse、formatDate、withLock
+    └── settings.js    ← getSettings
 ```
 
 - 後端程式碼資料夾**固定命名為 `src/`**。
@@ -114,10 +118,10 @@ api/
 | 更新方式 | `yarn deploy` | `yarn push` 後立即生效 |
 | 存取 | 任何人，不需登入 | 僅限有編輯權且已登入的 Google 帳號 |
 
-- 開發流程：`yarn push` → 用已登入的瀏覽器開 `/dev?action=…` 測試 → `yarn deploy:staging` → 前端 `yarn dev:staging` 驗證 → merge 後使用者執行 `yarn deploy`。
+- 開發流程：`yarn push` → 在線上編輯器執行 `test_xxx()` 測試 → `yarn deploy:staging` → 前端 `yarn dev:staging` 驗證 → merge 後使用者執行 `yarn deploy`。
 - 測試部署與正式部署是兩個獨立的 `/exec`，各自綁定固定版本；`clasp push` 與 `yarn deploy:staging` 都不影響正式部署。兩者目前讀寫**同一份試算表**，放入真實資料後需改用測試試算表。
 - 前端 `VITE_API_URL` **一定用 `/exec`**；`/dev` 會被導向 Google 登入頁，前端呼叫不了。
-- POST 無法在網址列測試，用 `test_xxx()` 函式在線上編輯器執行。
+- 除了 `?action=ping`，所有 API 都是 POST，無法在網址列測試，用 `test_xxx()` 函式在線上編輯器執行。
 
 ### 重要規則
 
@@ -151,7 +155,7 @@ api/
 
 - 可提交：`src/`、`.clasp.json`、`.claspignore`、`.yarnrc.yml`、`.env.example`、`package.json`、`yarn.lock`
 - 不可提交：`node_modules/`、`.yarn/`（根目錄 `.gitignore` 已排除）、任何密碼。clasp 登入憑證在家目錄（`~/.clasprc.json`），不在 repo 內。
-- 共用密碼只存在線上的 Script Properties（`API_KEY`）。
+- 共用帳密只存在線上的 Script Properties（`API_USER`、`API_KEY`；Apps Script 編輯器 → 專案設定 → 指令碼屬性），修改後立即生效、不需重新部署。正式與測試部署共用同一組。
 
 ## 第一階段範圍
 
@@ -169,7 +173,7 @@ api/
 - **Invoices**：invoice_id, invoice_no, source_type, source_id, invoice_date, amount, buyer_tax_id, invoice_status, note, created_at, updated_at
 - **Repairs**：repair_id, customer_id, device_id, received_at, accessories, intake_condition, issue, diagnosis, status, quote_amount, final_amount, deposit, is_paid, estimated_done_date, completed_at, picked_up_at, technician, note, created_at, updated_at
 - **RepairLogs**：log_id, repair_id, status, note, staff, created_at
-- **Settings**：下拉選項清單（category, platform, condition, payment_method, order_status, repair_status, source_type, invoice_status, device_type, brand）
+- **Settings**：下拉選項清單（category, platform, condition, payment_method, order_status, repair_status, source_type, invoice_status, device_type, brand, staff）；每欄一種選項，第 1 列為欄名，往下每列一個值，各欄長度可不同
 
 ## 資料慣例
 
@@ -199,10 +203,11 @@ api/
 ## API 慣例
 
 - 回應格式一律為 `{ ok: true, data }` 或 `{ ok: false, error }`（Apps Script 無法設定 HTTP 狀態碼）
-- 讀取：`GET ?action=<名稱>`
-- 寫入：`POST`，body 為 JSON 字串，但 `Content-Type` 必須是 `text/plain`，以避開 CORS preflight
-- 驗證（尚未實作）：每個請求帶共用密碼，後端與 Script Properties 中的 `API_KEY` 比對；前端讓使用者輸入一次後存在 `localStorage`。所有請求經過單一入口先呼叫 `checkAuth()`，日後可換成 Google 登入
-- 目前 API 尚無密碼保護，試算表中只放測試資料
+- 讀寫一律 `POST`（避免密碼出現在網址），body 為 JSON 字串 `{ action, auth: { user, key }, params }`，`Content-Type` 必須是 `text/plain`，以避開 CORS preflight
+  - 唯一的 GET 是不需驗證的 `?action=ping`，用來確認後端是否正常
+  - 新增 API：寫好處理函式（接收 `params`），在 `main.js` 的 `ACTIONS` 登記
+- 驗證：`doPost` → `handleRequest` 先呼叫 `checkAuth()`，與 Script Properties 的 `API_USER`、`API_KEY` 比對；失敗時延遲 1 秒並回傳 `{ ok: false, error: '帳號或密碼錯誤', code: 'AUTH' }`。日後可換成 Google 登入
+- 已有的 action：`login`（只驗證帳密）、`settings`（回傳 `{ staff: [...], category: [...], ... }`）
 
 ## 前端注意事項
 
@@ -210,12 +215,18 @@ api/
   - 測試部署網址放在 `web/.env.staging.local`，以 `yarn dev:staging`（`vite --mode staging`）啟動時優先採用
 - GitHub Pages 無伺服器端路由：使用 `HashRouter`（從 `react-router` 匯入），`vite.config.ts` 的 `base` 為 `/project-gshop-erp/`
   - `base` 下引用 `public/` 檔案不可寫絕對路徑 `/xxx`；在程式中用 `import` 或 `import.meta.env.BASE_URL`
-  - 目前 `App.tsx` 只有首頁路由，顯示 `ApiTest.tsx` 連線測試
+- 路由（`App.tsx`）：`/login` 不需登入；其餘包在 `RequireAuth`（未登入或未選店員 → `/login`，登入後回原頁）與 `Layout`（頁首；`md` 以下為漢堡選單）內
 - 部署：`.github/workflows/deploy-web.yml`，push 到 `master` 且 `web/` 有變更時自動建置並部署
   - CI 的 API 網址來自 repo 的 Actions **Variable** `VITE_API_URL`（不是 Secret；網址本來就會出現在打包後的 JS）
   - repo 的 Settings → Pages → Source 需設為「GitHub Actions」
   - 本機確認：`yarn build && yarn preview`，開 `http://localhost:4173/project-gshop-erp/`
 - Apps Script 回應約 1～3 秒，所有請求都需要載入狀態
 - 介面文字為繁體中文；英文欄位名稱需對應中文標籤
-- 店員可能在櫃台用手機或平板操作，版面需支援小螢幕
+- **響應式設計**：每個頁面都必須同時支援電腦、平板、手機（櫃台常用手機或平板）；按鈕與輸入框要夠大好點擊
+- UI：Tailwind CSS v4 + shadcn/ui（`yarn dlx shadcn@latest add <元件>`，產生於 `src/components/ui/`）；只做淺色模式、使用系統字型；匯入路徑別名 `@/` = `src/`
+- 呼叫後端一律用 `src/lib/api.ts` 的 `callApi(action, params)` 搭配 TanStack Query：
+  - 自動帶入已登入的帳密；收到 `AUTH` 會清除登入狀態並導回登入頁
+  - 錯誤由 `queryClient` 統一以 sonner 通知顯示；只重試網路錯誤
+  - 下拉選項用 `useSettings()`（每次開啟網頁讀取一次）
+- 登入狀態（`src/lib/session.ts`）：帳密與目前店員存在 `localStorage`，按「登出」才清除；店員可在頁首切換，新增訂單／維修時用來帶入 `staff`、`technician`
 - repo 為公開，不可放入真實客戶資料或任何密碼
