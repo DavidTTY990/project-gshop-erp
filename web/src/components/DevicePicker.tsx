@@ -1,8 +1,9 @@
 import { CheckCircle2Icon, Loader2Icon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DeviceFields from '@/components/DeviceFields';
-import { deviceLabel, normalizeSerial, useAllDevices, type Device, type DeviceInput } from '@/lib/devices';
-import { dateOnly, useAllRepairs } from '@/lib/repairs';
+import { useCustomerHistory } from '@/lib/customerHistory';
+import { deviceLabel, normalizeSerial, type Device, type DeviceInput } from '@/lib/devices';
+import { dateOnly } from '@/lib/repairs';
 
 /** 沿用客人送修過的機器，或輸入其他機器 */
 export type DeviceChoice = { kind: 'existing'; device_id: string } | { kind: 'new'; device: DeviceInput } | null;
@@ -16,28 +17,8 @@ type Props = {
   onBlurDeviceField?: (field: keyof DeviceInput) => void;
 };
 
-/** 這位客人送修過的機器（依最近一次送修排序） */
-function usePastDevices(customerId: string) {
-  const repairs = useAllRepairs();
-  const devices = useAllDevices();
-  const isPending = repairs.isPending || devices.isPending;
-
-  const lastReceived = new Map<string, string>();
-  for (const r of repairs.data ?? []) {
-    if (r.customer_id !== customerId) continue;
-    const prev = lastReceived.get(r.device_id);
-    if (!prev || r.received_at > prev) lastReceived.set(r.device_id, r.received_at);
-  }
-  const past = (devices.data ?? [])
-    .filter((d) => lastReceived.has(d.device_id))
-    .map((d) => ({ device: d, lastReceived: lastReceived.get(d.device_id)! }))
-    .sort((a, b) => b.lastReceived.localeCompare(a.lastReceived));
-
-  return { past, isPending, devices: devices.data ?? [], repairs: repairs.data ?? [] };
-}
-
 export default function DevicePicker({ customerId, value, onChange, error, deviceErrors, onBlurDeviceField }: Props) {
-  const { past, isPending, devices, repairs } = usePastDevices(customerId);
+  const { pastDevices: past, isPending, allDevices: devices, allRepairs: repairs } = useCustomerHistory(customerId);
 
   // 輸入的序號已存在：建立時後端會沿用該機器（只顯示機器資料與維修次數，不顯示前一位客人）
   const serial = value?.kind === 'new' ? normalizeSerial(value.device.serial_no) : '';
@@ -57,7 +38,7 @@ export default function DevicePicker({ customerId, value, onChange, error, devic
     <div className="flex flex-col gap-3">
       {past.length > 0 && <p className="text-sm text-muted-foreground">這位客人送修過的機器</p>}
       <div className="grid gap-2 sm:grid-cols-2">
-        {past.map(({ device, lastReceived }) => (
+        {past.map(({ device, lastRepair }) => (
           <ChoiceButton
             key={device.device_id}
             selected={value?.kind === 'existing' && value.device_id === device.device_id}
@@ -65,7 +46,7 @@ export default function DevicePicker({ customerId, value, onChange, error, devic
           >
             <span className="font-medium">{deviceLabel(device)}</span>
             <span className="text-sm text-muted-foreground">
-              {[device.serial_no && `序號 ${device.serial_no}`, `上次送修 ${dateOnly(lastReceived)}`]
+              {[device.serial_no && `序號 ${device.serial_no}`, `上次送修 ${dateOnly(lastRepair.received_at)}`]
                 .filter(Boolean)
                 .join('｜')}
             </span>

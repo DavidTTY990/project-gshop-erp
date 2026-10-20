@@ -54,9 +54,9 @@ cd api && yarn deploy
 - [x] 客人：API（列表搜尋、查詢、新增、編輯）、新增頁、資料頁（基本資料檢視與編輯）、首頁暫放客人搜尋
 - [x] 客人搜尋改為前端即時搜尋；查詢快取 1 分鐘、存檔後直接更新快取；頁首重新整理按鈕
 - [x] 維修（一）：機器與維修 API、新增維修單、維修單詳情（編輯、變更狀態、歷程、編輯機器）、客人頁「新增維修」按鈕
-- [ ] 維修（二）：首頁「維修｜客人」分頁與維修篩選、客人頁「歷史維修」「送修過的機器」
+- [x] 維修（二）：首頁「維修｜客人」分頁與維修篩選、客人頁「歷史維修」「送修過的機器」
 - [ ] 訂單（含明細、發票、退貨；客人資料頁補「歷史訂單」）
-- [ ] 首頁搜尋（訂單／維修／客人分頁；現有客人搜尋成為「客人」分頁）
+- [ ] 首頁搜尋：加入「訂單」分頁（維修、客人分頁已完成）
 
 ## 後端（`api/`）
 
@@ -254,9 +254,14 @@ api/
   - 頁首「重新整理」按鈕呼叫 `invalidateQueries()`，重新讀取目前畫面的資料（含 `settings`）
   - 新增／編輯成功後以回傳資料 `setQueryData` 更新快取，不重新讀取
 - 客人搜尋：`useAllCustomers()` 讀取全部客人，`searchCustomers()` 在前端比對（姓名、LINE ID、電話數字）、排序（新到舊）與分頁；首頁邊打字邊搜尋，關鍵字以 `replace` 同步到網址 `?q=`。客人詳情以全部客人快取為 `initialData`，快取沒有時才呼叫 `getCustomer`
+- 首頁（`HomePage`）：依類型分頁，`?tab=`（預設維修、`customers` 客人），切換分頁時清除其他條件；各分頁元件（`RepairSearch`、`CustomerSearch`）自行讀寫網址參數
+  - 維修搜尋（`src/lib/repairSearch.ts`）：前端合併 `allRepairs`、`allCustomers`、`allDevices`；關鍵字比對單號、客人姓名、電話、序號、機型、問題描述；條件（`?status=`（逗號分隔）、`from`、`to`、`handler`（`__none__` = 未指派）、`paid`、`overdue=1`）收在「篩選」面板，有條件時預設展開；收件時間新到舊
+  - 分頁一律用 `src/lib/paging.ts` 的 `paginate()`（每頁 10 筆）與 `<Pagination />`
+- 客人頁：歷史維修（新到舊）與送修過的機器，由 `useCustomerHistory()`（`src/lib/customerHistory.ts`）從 Repairs 推出；新增維修單的機器選擇也用它
 - 表單檢核時機：用 `src/lib/useFieldErrors.ts`，欄位 onBlur 後才顯示該欄錯誤、送出時顯示全部；錯誤每次 render 由目前的值重新計算。下拉選單（`SettingSelect`）以選單關閉視為離開欄位（觸發器的 onBlur 在展開時就會觸發）
 - 彈出視窗（Dialog）中的表單：React 事件會沿**元件樹**冒泡（不是 DOM 樹），Portal 內的 `submit` 會觸發外層 `<form>` 的 onSubmit。視窗不要放在其他表單內；可重用的表單元件在 onSubmit 中 `e.stopPropagation()`
 - 同一路由只改網址參數時元件不會重新掛載（例：`/repairs/new?customer=`），依參數重設的狀態以 `key` 處理
 - 詳情頁的「返回」：連到詳情頁時在 router `state` 帶 `BackState`（`{ from: 來源網址, label: '回搜尋結果' }`，見 `src/lib/navigation.ts`），詳情頁用 `<BackButton fallback fallbackLabel />`；不用 `navigate(-1)`（直接開網址時會離開網站）
+  - 從詳情頁再連到其他詳情頁時用 `backStateFrom(location, '回維修單')`：會把目前頁面自己的 BackState 放進 `state`，返回時帶回，多層返回仍正確（搜尋 → 客人 → 維修單 → 回客人資料 → 回搜尋結果）
 - 登入狀態（`src/lib/session.ts`）：帳密與目前店員存在 `localStorage`，按「登出」才清除；店員可在頁首切換，新增訂單／維修時用來帶入 `staff`（RepairLogs）；維修單的 `handler`（經手人員）另行選擇
 - repo 為公開，不可放入真實客戶資料或任何密碼

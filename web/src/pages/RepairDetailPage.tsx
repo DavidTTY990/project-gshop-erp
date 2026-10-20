@@ -12,7 +12,7 @@ import RepairFieldsForm from '@/components/RepairFieldsForm';
 import RepairStatusBadge from '@/components/RepairStatusBadge';
 import { formatPhone, useCustomer } from '@/lib/customers';
 import { deviceLabel, type Device } from '@/lib/devices';
-import type { BackState } from '@/lib/navigation';
+import { backStateFrom, type BackState } from '@/lib/navigation';
 import {
   balanceDue,
   dateOnly,
@@ -55,8 +55,8 @@ export default function RepairDetailPage() {
 function RepairView({ repair, device, logs }: { repair: Repair; device: Device | null; logs: RepairLog[] }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const location = useLocation();
-  // 從這張單點到客人或其他維修單時，返回按鈕回到這裡
-  const backState: BackState = { from: location.pathname, label: '回維修單' };
+  // 從這張單點到客人或其他維修單時，返回按鈕回到這裡（並保留這張單原本的返回目標）
+  const backState = backStateFrom(location, '回維修單');
 
   return (
     <div className="flex flex-col gap-4">
