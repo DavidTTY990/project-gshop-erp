@@ -8,6 +8,8 @@ import CustomerDetailPage from '@/pages/CustomerDetailPage';
 import CustomerNewPage from '@/pages/CustomerNewPage';
 import HomePage from '@/pages/HomePage';
 import LoginPage from '@/pages/LoginPage';
+import RepairDetailPage from '@/pages/RepairDetailPage';
+import RepairNewPage from '@/pages/RepairNewPage';
 import PlaceholderPage from '@/pages/PlaceholderPage';
 
 // GitHub Pages 沒有伺服器端路由，使用 HashRouter（網址形如 /#/orders）
@@ -24,8 +26,8 @@ function App() {
               <Route path="/customers/:id" element={<CustomerDetailPage />} />
               <Route path="/orders/new" element={<PlaceholderPage title="新增訂單" />} />
               <Route path="/orders/:id" element={<PlaceholderPage title="訂單詳情" />} />
-              <Route path="/repairs/new" element={<PlaceholderPage title="新增維修單" />} />
-              <Route path="/repairs/:id" element={<PlaceholderPage title="維修單詳情" />} />
+              <Route path="/repairs/new" element={<RepairNewPage />} />
+              <Route path="/repairs/:id" element={<RepairDetailPage />} />
               <Route path="*" element={<PlaceholderPage title="找不到頁面" />} />
             </Route>
           </Route>

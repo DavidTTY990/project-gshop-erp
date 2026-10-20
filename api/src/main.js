@@ -13,6 +13,13 @@ const ACTIONS = {
   getCustomer: p => getCustomer(p),
   createCustomer: p => createCustomer(p),
   updateCustomer: p => updateCustomer(p),
+  allDevices: () => allDevices(),
+  updateDevice: p => updateDevice(p),
+  allRepairs: () => allRepairs(),
+  getRepair: p => getRepair(p),
+  createRepair: p => createRepair(p),
+  updateRepair: p => updateRepair(p),
+  changeRepairStatus: p => changeRepairStatus(p),
 };
 
 /** 不需驗證的健康檢查：瀏覽器開 /exec?action=ping */
