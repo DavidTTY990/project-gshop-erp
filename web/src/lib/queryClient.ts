@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { ApiError } from './apiError';
 
 /** 由表單自行顯示在欄位旁的錯誤，不另跳通知 */
-const INLINE_ERROR_CODES = new Set(['DUPLICATE_PHONE']);
+const INLINE_ERROR_CODES = new Set(['DUPLICATE_PHONE', 'DUPLICATE_SERIAL']);
 
 const showError = (err: Error) => {
   if (err instanceof ApiError && err.code && INLINE_ERROR_CODES.has(err.code)) return;

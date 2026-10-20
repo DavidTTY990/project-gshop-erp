@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError } from '@/lib/apiError';
 import { normalizePhone, type CustomerInput, type DuplicatePhone } from '@/lib/customers';
+import { useFieldErrors } from '@/lib/useFieldErrors';
 
 type Props = {
   defaultValues?: CustomerInput;
@@ -35,7 +36,8 @@ function validate(input: CustomerInput): Errors {
 /** 新增與編輯客人共用的表單 */
 export default function CustomerForm({ defaultValues = EMPTY, submitLabel, pending, error, onSubmit, onCancel }: Props) {
   const [values, setValues] = useState(defaultValues);
-  const [errors, setErrors] = useState<Errors>({});
+  // 欄位離開焦點後才檢核該欄，送出時檢核全部
+  const field = useFieldErrors(validate(values));
 
   const duplicate =
     error instanceof ApiError && error.code === 'DUPLICATE_PHONE' ? (error.data as DuplicatePhone) : null;
@@ -45,19 +47,26 @@ export default function CustomerForm({ defaultValues = EMPTY, submitLabel, pendi
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const next = validate(values);
-    setErrors(next);
-    if (Object.keys(next).length === 0) onSubmit(values);
+    // 放在彈出視窗時，React 事件仍會沿元件樹冒泡到外層表單，需阻止
+    e.stopPropagation();
+    if (field.submit()) onSubmit(values);
   };
 
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-      <Field id="name" label="姓名" required error={errors.name}>
-        <Input id="name" className="h-10" value={values.name} onChange={set('name')} aria-invalid={!!errors.name} />
+      <Field id="name" label="姓名" required error={field.error('name')}>
+        <Input
+          id="name"
+          className="h-10"
+          value={values.name}
+          onChange={set('name')}
+          onBlur={field.touch('name')}
+          aria-invalid={!!field.error('name')}
+        />
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field id="phone" label="電話" error={errors.phone}>
+        <Field id="phone" label="電話" error={field.error('phone')}>
           <Input
             id="phone"
             type="tel"
@@ -66,7 +75,8 @@ export default function CustomerForm({ defaultValues = EMPTY, submitLabel, pendi
             placeholder="0912-345-678"
             value={values.phone}
             onChange={set('phone')}
-            aria-invalid={!!errors.phone || !!duplicate}
+            onBlur={field.touch('phone')}
+            aria-invalid={!!field.error('phone') || !!duplicate}
           />
           {duplicate && (
             <p className="text-sm text-destructive">
@@ -85,10 +95,11 @@ export default function CustomerForm({ defaultValues = EMPTY, submitLabel, pendi
             autoCapitalize="none"
             value={values.line_id}
             onChange={set('line_id')}
+            onBlur={field.touch('contact')}
           />
         </Field>
       </div>
-      {errors.contact && <p className="-mt-2 text-sm text-destructive">{errors.contact}</p>}
+      {field.error('contact') && <p className="-mt-2 text-sm text-destructive">{field.error('contact')}</p>}
 
       <Field id="note" label="備註">
         <Textarea id="note" rows={3} value={values.note} onChange={set('note')} />
@@ -126,7 +137,7 @@ function Field({
     <div className="flex flex-col gap-2">
       <Label htmlFor={id}>
         {label}
-        {required && <span className="text-destructive">*</span>}
+        {required && <span className="text-muted-foreground" aria-label="必填">*</span>}
       </Label>
       {children}
       {error && <p className="text-sm text-destructive">{error}</p>}

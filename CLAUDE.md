@@ -53,7 +53,8 @@ cd api && yarn deploy
 - [x] 登入頁（帳密＋選擇店員）、共用版面、路由保護；其餘頁面為「建置中」
 - [x] 客人：API（列表搜尋、查詢、新增、編輯）、新增頁、資料頁（基本資料檢視與編輯）、首頁暫放客人搜尋
 - [x] 客人搜尋改為前端即時搜尋；查詢快取 1 分鐘、存檔後直接更新快取；頁首重新整理按鈕
-- [ ] 維修（含機器、RepairLogs；客人資料頁補「歷史維修」「送修過的機器」）
+- [x] 維修（一）：機器與維修 API、新增維修單、維修單詳情（編輯、變更狀態、歷程、編輯機器）、客人頁「新增維修」按鈕
+- [ ] 維修（二）：首頁「維修｜客人」分頁與維修篩選、客人頁「歷史維修」「送修過的機器」
 - [ ] 訂單（含明細、發票、退貨；客人資料頁補「歷史訂單」）
 - [ ] 首頁搜尋（訂單／維修／客人分頁；現有客人搜尋成為「客人」分頁）
 
@@ -75,9 +76,11 @@ api/
     ├── appsscript.json
     ├── main.js        ← doGet（僅 ping）、doPost、handleRequest、ACTIONS 路由表
     ├── auth.js        ← checkAuth
-    ├── utils.js       ← readSheet、jsonResponse、formatDate、withLock、AppError、appendRecord、updateRecord、nextId、PAGE_SIZE
+    ├── utils.js       ← readSheet、jsonResponse、formatDate、withLock、AppError、appendRecord、updateRecord、nextId、PAGE_SIZE、toAmount、toBool、parseAmount、parseDate、toText
     ├── settings.js    ← getSettings
-    └── customers.js   ← allCustomers、getCustomer、createCustomer、updateCustomer
+    ├── customers.js   ← allCustomers、getCustomer、createCustomer、updateCustomer
+    ├── devices.js     ← allDevices、updateDevice、findOrCreateDevice、normalizeSerial
+    └── repairs.js     ← allRepairs、getRepair、createRepair、updateRepair、changeRepairStatus
 ```
 
 - 後端程式碼資料夾**固定命名為 `src/`**。
@@ -136,7 +139,7 @@ api/
 - **部署一定要帶 `-i <部署ID>`**。不帶會建立新部署並產生新網址，前端會連不上。
 - **只在本機修改程式碼**。`clasp push` 會用本機版本覆蓋線上全部程式碼。
 - **Apps Script 沒有模組系統**：所有 `.js` 檔共用全域範圍，不可使用 `import`／`export`，函式名稱不可重複。沒有 npm 套件、`fetch`（改用 `UrlFetchApp`）、`setTimeout`。
-- **讀寫試算表要批次處理**：用 `getDataRange().getValues()` 一次讀整張表；寫入一律用 `appendRecord()`／`updateRecord()`（依標題寫整列，字串設純文字、`Date` 設日期時間、數字維持數字，避免電話開頭的 0 被吃掉）；不要在迴圈中逐格讀寫。
+- **讀寫試算表要批次處理**：用 `getDataRange().getValues()` 一次讀整張表；寫入一律用 `appendRecord()`／`updateRecord()`（依標題寫整列，字串設純文字、`Date` 設日期時間、數字與布林維持原型別，避免電話開頭的 0 被吃掉）；不要在迴圈中逐格讀寫。
 - **`ACTIONS` 登記時用箭頭函式**（`p => createCustomer(p)`）：各檔案依序載入，`main.js` 執行時其他檔案的函式可能尚未定義。
 - 寫入函式在 `withLock()` 內完成「讀取 → 檢查 → 產生主鍵（`nextId`）→ 寫入」，只接受白名單欄位。
 - **把邏輯與 HTTP 分開**：例如 `createCustomer(data)` 搭配 `test_createCustomer()`，可在線上編輯器直接執行測試。
@@ -178,9 +181,9 @@ api/
 - **Orders**：order_id, customer_id, order_date, subtotal, discount, total, payment_method, status, returned_at, return_reason, staff, note, created_at, updated_at
 - **OrderItems**：item_id, order_id, invoice_id, product_name, category, platform, condition, unit_price, qty, line_total, note
 - **Invoices**：invoice_id, invoice_no, source_type, source_id, invoice_date, amount, buyer_tax_id, invoice_status, note, created_at, updated_at
-- **Repairs**：repair_id, customer_id, device_id, received_at, accessories, intake_condition, issue, diagnosis, status, quote_amount, final_amount, deposit, is_paid, estimated_done_date, completed_at, picked_up_at, technician, note, created_at, updated_at
+- **Repairs**：repair_id, customer_id, device_id, received_at, accessories, intake_condition, issue, diagnosis, status, quote_amount, final_amount, deposit, is_paid, estimated_done_date, completed_at, picked_up_at, handler, note, created_at, updated_at
 - **RepairLogs**：log_id, repair_id, status, note, staff, created_at
-- **Settings**：下拉選項清單（category, platform, condition, payment_method, order_status, repair_status, source_type, invoice_status, device_type, brand, staff）；每欄一種選項，第 1 列為欄名，往下每列一個值，各欄長度可不同
+- **Settings**：下拉選項清單（category, platform, condition, payment_method, order_status, repair_status, source_type, invoice_status, device_type, brand, staff, accessory）；每欄一種選項，第 1 列為欄名，往下每列一個值，各欄長度可不同
 
 ## 資料慣例
 
@@ -189,7 +192,7 @@ api/
 - 日期時間格式 `yyyy-mm-dd hh:mm`，時區 Asia/Taipei；回傳前端前先格式化，避免變成 UTC
   - `jsonResponse()` 會把回應中所有 `Date` 經 `formatDate()` 轉成字串，所有 API 回應都必須經過它
   - 試算表中只有日期的儲存格也會讀成 `Date`，會輸出為 `yyyy-mm-dd 00:00`
-  - 前端送來的日期字串寫入前也要確認格式一致（新增寫入 API 時留意）
+  - 前端送來的日期一律為 `yyyy-mm-dd`，寫入前以 `parseDate()` 轉成台北時間當天 00:00 的 `Date`；前端以 `dateOnly()` 取前 10 碼顯示或填入 `<input type="date">`
 - 主鍵由後端產生：前綴-日期-流水號，例 `O-20261018-001`、`R-…`、`C-…`、`D-…`、`INV-…`
 - `_id`、電話、序號、發票號碼、統編皆為純文字
 
@@ -206,18 +209,27 @@ api/
 - Devices 不記錄客戶；「客人送修過哪些機器」由 Repairs 的 `customer_id` + `device_id` 查出
 - 建立維修單時，先列出該客人過去送修過的機器供選擇，避免重複建立
 - 每次變更 `Repairs.status` 同時新增一筆 RepairLogs
+- 維修單：
+  - 新增時狀態固定「已收件」，並寫入第一筆 RepairLogs（`staff` = 收件店員）；`received_at` 由後端填入
+  - 必填：客人、機器、`issue`；`handler`（經手人員）可留空，日後指派
+  - 狀態只能經 `changeRepairStatus` 變更（任意狀態皆可，需在 Settings `repair_status` 內）；其餘欄位以 `updateRepair` 編輯，不寫 RepairLogs；客人、機器、`received_at`、單號不可改
+  - 狀態自動處理時間（依名稱判斷，Settings 改名時需同步修改 `repairs.js` 與前端 `lib/repairs.ts`）：「可取件」「無法維修」→ 填 `completed_at`（已有則保留）；「已取件」→ 填 `picked_up_at`；改回處理中（已收件、檢測中、待報價、待零件、維修中）→ 清除 `completed_at`
+  - 金額：`quote_amount` 報價（可留空）、`deposit` 訂金（預設 0）、`final_amount` 總金額（非尾款）、`is_paid` 是否付清；尾款 = 總金額（未填則用報價）− 訂金，只在前端計算
+  - 改為「已取件」且未付清時，前端提供「已收款並取件」（`mark_paid`）與「仍要取件」
+  - 逾期：`estimated_done_date` 早於今天且狀態為處理中或待報價／待零件
+- 機器：新增維修單時輸入的序號若已存在則沿用該機器（例：二手機換主人），前端只顯示機器資料與維修次數，不顯示前一位客人；編輯機器影響其所有維修單，序號重複回傳 `DUPLICATE_SERIAL`
 - 寫入時使用 `LockService` 避免同時寫入衝突
 
 ## API 慣例
 
 - 回應格式一律為 `{ ok: true, data }` 或 `{ ok: false, error, code?, data? }`（Apps Script 無法設定 HTTP 狀態碼）
-  - 業務錯誤丟 `new AppError(message, code, data)`，前端以 `code` 判斷（`AUTH`、`VALIDATION`、`NOT_FOUND`、`DUPLICATE_PHONE`）；需在欄位旁顯示的 code 列在前端 `queryClient.ts` 的 `INLINE_ERROR_CODES`，不另跳通知
+  - 業務錯誤丟 `new AppError(message, code, data)`，前端以 `code` 判斷（`AUTH`、`VALIDATION`、`NOT_FOUND`、`DUPLICATE_PHONE`、`DUPLICATE_SERIAL`）；需在欄位旁顯示的 code 列在前端 `queryClient.ts` 的 `INLINE_ERROR_CODES`，不另跳通知
   - 列表 API 回傳 `{ items, total, page, pageSize }`，每頁 `PAGE_SIZE`（10）筆（客人例外：`allCustomers` 回傳全部，由前端搜尋分頁）
 - 讀寫一律 `POST`（避免密碼出現在網址），body 為 JSON 字串 `{ action, auth: { user, key }, params }`，`Content-Type` 必須是 `text/plain`，以避開 CORS preflight
   - 唯一的 GET 是不需驗證的 `?action=ping`，用來確認後端是否正常
   - 新增 API：寫好處理函式（接收 `params`），在 `main.js` 的 `ACTIONS` 登記
 - 驗證：`doPost` → `handleRequest` 先呼叫 `checkAuth()`，與 Script Properties 的 `API_USER`、`API_KEY` 比對；失敗時延遲 1 秒並回傳 `{ ok: false, error: '帳號或密碼錯誤', code: 'AUTH' }`。日後可換成 Google 登入
-- 已有的 action：`login`（只驗證帳密）、`settings`（回傳 `{ staff: [...], category: [...], ... }`）、`allCustomers`（全部客人，依試算表列順序）、`getCustomer`（`{ id }`）、`createCustomer`、`updateCustomer`（`{ id, name, phone, line_id, note }`）
+- 已有的 action：`login`（只驗證帳密）、`settings`（回傳 `{ staff: [...], category: [...], ... }`）、`allCustomers`（全部客人，依試算表列順序）、`getCustomer`（`{ id }`）、`createCustomer`、`updateCustomer`（`{ id, name, phone, line_id, note }`）、`allDevices`、`updateDevice`（`{ id, serial_no, device_type, brand, device_model, note }`）、`allRepairs`、`getRepair`（`{ id }` → `{ repair, device, logs }`）、`createRepair`（`{ customer_id, device_id | device, issue, …, staff }`）、`updateRepair`、`changeRepairStatus`（`{ id, status, note, staff, mark_paid? }`）
 
 ## 前端注意事項
 
@@ -242,6 +254,9 @@ api/
   - 頁首「重新整理」按鈕呼叫 `invalidateQueries()`，重新讀取目前畫面的資料（含 `settings`）
   - 新增／編輯成功後以回傳資料 `setQueryData` 更新快取，不重新讀取
 - 客人搜尋：`useAllCustomers()` 讀取全部客人，`searchCustomers()` 在前端比對（姓名、LINE ID、電話數字）、排序（新到舊）與分頁；首頁邊打字邊搜尋，關鍵字以 `replace` 同步到網址 `?q=`。客人詳情以全部客人快取為 `initialData`，快取沒有時才呼叫 `getCustomer`
+- 表單檢核時機：用 `src/lib/useFieldErrors.ts`，欄位 onBlur 後才顯示該欄錯誤、送出時顯示全部；錯誤每次 render 由目前的值重新計算。下拉選單（`SettingSelect`）以選單關閉視為離開欄位（觸發器的 onBlur 在展開時就會觸發）
+- 彈出視窗（Dialog）中的表單：React 事件會沿**元件樹**冒泡（不是 DOM 樹），Portal 內的 `submit` 會觸發外層 `<form>` 的 onSubmit。視窗不要放在其他表單內；可重用的表單元件在 onSubmit 中 `e.stopPropagation()`
+- 同一路由只改網址參數時元件不會重新掛載（例：`/repairs/new?customer=`），依參數重設的狀態以 `key` 處理
 - 詳情頁的「返回」：連到詳情頁時在 router `state` 帶 `BackState`（`{ from: 來源網址, label: '回搜尋結果' }`，見 `src/lib/navigation.ts`），詳情頁用 `<BackButton fallback fallbackLabel />`；不用 `navigate(-1)`（直接開網址時會離開網站）
-- 登入狀態（`src/lib/session.ts`）：帳密與目前店員存在 `localStorage`，按「登出」才清除；店員可在頁首切換，新增訂單／維修時用來帶入 `staff`、`technician`
+- 登入狀態（`src/lib/session.ts`）：帳密與目前店員存在 `localStorage`，按「登出」才清除；店員可在頁首切換，新增訂單／維修時用來帶入 `staff`（RepairLogs）；維修單的 `handler`（經手人員）另行選擇
 - repo 為公開，不可放入真實客戶資料或任何密碼

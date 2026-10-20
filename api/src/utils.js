@@ -67,13 +67,13 @@ class AppError extends Error {
 
 /**
  * 依第 1 列標題把物件寫入第 rowIndex 列（1 起算）。
- * 先設定儲存格格式再寫值：字串設為純文字（保留電話開頭的 0），Date 設為日期時間，數字維持數字。
+ * 先設定儲存格格式再寫值：字串設為純文字（保留電話開頭的 0），Date 設為日期時間，數字與布林維持原型別。
  */
 function writeRecord(sheet, headers, rowIndex, obj) {
   const values = headers.map(h => (obj[h] === undefined || obj[h] === null ? '' : obj[h]));
   const formats = values.map(v => {
     if (v instanceof Date) return 'yyyy-mm-dd hh:mm';
-    if (typeof v === 'number') return '0';
+    if (typeof v === 'number' || typeof v === 'boolean') return '0';  // 布林寫成 TRUE／FALSE，不轉文字
     return '@';
   });
   const range = sheet.getRange(rowIndex, 1, 1, headers.length);
@@ -110,4 +110,35 @@ function nextId(prefix, existingIds) {
     .filter(id => id.startsWith(head))
     .reduce((m, id) => Math.max(m, Number(id.slice(head.length)) || 0), 0);
   return head + String(max + 1).padStart(3, '0');
+}
+
+/** 讀取時的金額：空白 → null，其餘轉為數字 */
+function toAmount(v) {
+  return v === '' || v === null || v === undefined ? null : Number(v);
+}
+
+/** 讀取時的布林：試算表的 TRUE 或字串 'TRUE' 皆為 true */
+function toBool(v) {
+  return v === true || String(v).toUpperCase() === 'TRUE';
+}
+
+/** 寫入前驗證金額：空白 → null；需為 0 以上的整數（新台幣） */
+function parseAmount(v, label) {
+  if (v === '' || v === null || v === undefined) return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0) throw new AppError(`${label}需為 0 以上的整數`, 'VALIDATION');
+  return n;
+}
+
+/** 前端送來的日期 'yyyy-mm-dd' → 台北時間當天 00:00 的 Date；空白 → null */
+function parseDate(v, label) {
+  if (v === '' || v === null || v === undefined) return null;
+  const s = String(v).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new AppError(`${label}格式需為 yyyy-mm-dd`, 'VALIDATION');
+  return Utilities.parseDate(s, 'Asia/Taipei', 'yyyy-MM-dd');
+}
+
+/** 字串欄位：去頭尾空白，null／undefined 視為空字串 */
+function toText(v) {
+  return String(v ?? '').trim();
 }
