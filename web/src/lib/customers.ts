@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { callApi } from './api';
+import { paginate, type Page } from './paging';
 import { queryClient } from './queryClient';
 
 export type Customer = {
@@ -15,8 +16,6 @@ export type Customer = {
 /** 可新增／編輯的欄位 */
 export type CustomerInput = Pick<Customer, 'name' | 'phone' | 'line_id' | 'note'>;
 
-export type Page<T> = { items: T[]; total: number; page: number; pageSize: number };
-
 /** 後端回傳 DUPLICATE_PHONE 時附帶的既有客人 */
 export type DuplicatePhone = Pick<Customer, 'customer_id' | 'name'>;
 
@@ -31,7 +30,6 @@ export function formatPhone(phone: string) {
 }
 
 const ALL_KEY = ['customers', 'all'];
-const PAGE_SIZE = 10;
 
 /** 全部客人（試算表列順序）；搜尋、排序與分頁在前端處理 */
 export function useAllCustomers() {
@@ -48,7 +46,6 @@ export function useAllCustomers() {
 export function searchCustomers(customers: Customer[], keyword: string, page: number): Page<Customer> {
   const kw = keyword.trim().toLowerCase();
   const digits = normalizePhone(kw);
-  const pageNo = Math.max(1, page);
 
   const matched = customers
     .map((c, i) => ({ c, i }))
@@ -63,12 +60,7 @@ export function searchCustomers(customers: Customer[], keyword: string, page: nu
     .sort((a, b) => String(b.c.created_at).localeCompare(String(a.c.created_at)) || b.i - a.i)
     .map(({ c }) => c);
 
-  return {
-    items: matched.slice((pageNo - 1) * PAGE_SIZE, pageNo * PAGE_SIZE),
-    total: matched.length,
-    page: pageNo,
-    pageSize: PAGE_SIZE,
-  };
+  return paginate(matched, page);
 }
 
 /** 從列表點進來時直接用全部客人的快取；快取沒有這位客人時才向後端查詢 */

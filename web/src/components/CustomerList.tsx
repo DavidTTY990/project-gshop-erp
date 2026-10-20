@@ -1,9 +1,10 @@
 import { Link, useLocation, useNavigate } from 'react-router';
-import { ChevronLeftIcon, ChevronRightIcon, Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Loader2Icon } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatPhone, type Customer, type Page } from '@/lib/customers';
+import Pagination from '@/components/Pagination';
+import { formatPhone, type Customer } from '@/lib/customers';
 import type { BackState } from '@/lib/navigation';
+import type { Page } from '@/lib/paging';
 
 type Props = {
   data?: Page<Customer>;
@@ -29,8 +30,6 @@ export default function CustomerList({ data, isPending, isFetching, onPageChange
   }
   if (!data) return null;
   if (data.total === 0) return <p className="py-8 text-center text-sm text-muted-foreground">找不到符合的客人</p>;
-
-  const totalPages = Math.ceil(data.total / data.pageSize);
 
   return (
     <div className={isFetching ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
@@ -84,34 +83,7 @@ export default function CustomerList({ data, isPending, isFetching, onPageChange
         </Table>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span>共 {data.total} 筆</span>
-        {totalPages > 1 && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon-lg"
-              aria-label="上一頁"
-              disabled={data.page <= 1}
-              onClick={() => onPageChange(data.page - 1)}
-            >
-              <ChevronLeftIcon />
-            </Button>
-            <span>
-              {data.page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="icon-lg"
-              aria-label="下一頁"
-              disabled={data.page >= totalPages}
-              onClick={() => onPageChange(data.page + 1)}
-            >
-              <ChevronRightIcon />
-            </Button>
-          </div>
-        )}
-      </div>
+      <Pagination data={data} onPageChange={onPageChange} />
     </div>
   );
 }
