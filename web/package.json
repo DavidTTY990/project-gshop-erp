@@ -1,12 +1,8 @@
 {
   "name": "project-gshop-erp-web",
-  "packageManager": "yarn@4.12.0+sha224.877304a94a6946ab1d58a358df5ff8af2f7c9d86ea506f05f5c9df05",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.0",
   "type": "module",
-  "engines": {
-    "node": "^22.23.4"
-  },
   "scripts": {
     "dev": "vite",
     "dev:staging": "vite --mode staging",
@@ -41,5 +37,6 @@
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
-  }
+  },
+  "packageManager": "yarn@4.12.0"
 }
