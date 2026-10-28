@@ -20,6 +20,13 @@ const ACTIONS = {
   createRepair: p => createRepair(p),
   updateRepair: p => updateRepair(p),
   changeRepairStatus: p => changeRepairStatus(p),
+  allOrders: () => allOrders(),
+  getOrder: p => getOrder(p),
+  productSuggestions: () => productSuggestions(),
+  createOrder: p => createOrder(p),
+  updateOrder: p => updateOrder(p),
+  cancelOrder: p => cancelOrder(p),
+  returnOrder: p => returnOrder(p),
 };
 
 /** 不需驗證的健康檢查：瀏覽器開 /exec?action=ping */

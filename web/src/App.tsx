@@ -8,6 +8,8 @@ import CustomerDetailPage from '@/pages/CustomerDetailPage';
 import CustomerNewPage from '@/pages/CustomerNewPage';
 import HomePage from '@/pages/HomePage';
 import LoginPage from '@/pages/LoginPage';
+import OrderDetailPage from '@/pages/OrderDetailPage';
+import OrderNewPage from '@/pages/OrderNewPage';
 import RepairDetailPage from '@/pages/RepairDetailPage';
 import RepairNewPage from '@/pages/RepairNewPage';
 import PlaceholderPage from '@/pages/PlaceholderPage';
@@ -24,8 +26,8 @@ function App() {
               <Route path="/" element={<HomePage />} />
               <Route path="/customers/new" element={<CustomerNewPage />} />
               <Route path="/customers/:id" element={<CustomerDetailPage />} />
-              <Route path="/orders/new" element={<PlaceholderPage title="新增訂單" />} />
-              <Route path="/orders/:id" element={<PlaceholderPage title="訂單詳情" />} />
+              <Route path="/orders/new" element={<OrderNewPage />} />
+              <Route path="/orders/:id" element={<OrderDetailPage />} />
               <Route path="/repairs/new" element={<RepairNewPage />} />
               <Route path="/repairs/:id" element={<RepairDetailPage />} />
               <Route path="*" element={<PlaceholderPage title="找不到頁面" />} />

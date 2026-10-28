@@ -8,10 +8,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import AccessoryInput from '@/components/AccessoryInput';
 import CustomerPicker from '@/components/CustomerPicker';
+import CustomerSummary from '@/components/CustomerSummary';
 import DevicePicker, { type DeviceChoice } from '@/components/DevicePicker';
 import FormField from '@/components/FormField';
 import SettingSelect from '@/components/SettingSelect';
-import { formatPhone, useCustomer } from '@/lib/customers';
 import { useCreateRepair } from '@/lib/repairs';
 import { useSession } from '@/lib/session';
 import { useFieldErrors } from '@/lib/useFieldErrors';
@@ -78,7 +78,7 @@ export default function RepairNewPage() {
         </CardHeader>
         <CardContent>
           {customerId ? (
-            <SelectedCustomer id={customerId} />
+            <CustomerSummary id={customerId} />
           ) : (
             <CustomerPicker onSelect={(c) => selectCustomer(c.customer_id)} />
           )}
@@ -224,19 +224,5 @@ function RepairIntakeForm({ customerId }: { customerId: string }) {
         </Button>
       </div>
     </form>
-  );
-}
-
-function SelectedCustomer({ id }: { id: string }) {
-  const { data: customer, isPending, isError } = useCustomer(id);
-  if (isPending) return <p className="text-sm text-muted-foreground">載入中…</p>;
-  if (isError) return <p className="text-sm text-destructive">找不到客人，請按「更換」重新選擇</p>;
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="font-medium">{customer.name}</span>
-      <span className="text-sm text-muted-foreground">
-        {[formatPhone(customer.phone), customer.line_id && `LINE：${customer.line_id}`].filter(Boolean).join('・')}
-      </span>
-    </div>
   );
 }

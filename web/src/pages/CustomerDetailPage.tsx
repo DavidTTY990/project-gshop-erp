@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
-import { Loader2Icon, PencilIcon, WrenchIcon } from 'lucide-react';
+import { Loader2Icon, PencilIcon, ShoppingCartIcon, WrenchIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -55,6 +55,12 @@ function CustomerCard({ customer }: { customer: Customer }) {
         <CardTitle className="text-xl">{customer.name}</CardTitle>
         {!editing && (
           <CardAction className="flex gap-2">
+            <Button asChild variant="outline" className="h-9">
+              <Link to={`/orders/new?customer=${customer.customer_id}`}>
+                <ShoppingCartIcon />
+                新增訂單
+              </Link>
+            </Button>
             <Button asChild variant="outline" className="h-9">
               <Link to={`/repairs/new?customer=${customer.customer_id}`}>
                 <WrenchIcon />

@@ -70,23 +70,39 @@ class AppError extends Error {
  * 先設定儲存格格式再寫值：字串設為純文字（保留電話開頭的 0），Date 設為日期時間，數字與布林維持原型別。
  */
 function writeRecord(sheet, headers, rowIndex, obj) {
-  const values = headers.map(h => (obj[h] === undefined || obj[h] === null ? '' : obj[h]));
-  const formats = values.map(v => {
+  writeRecords(sheet, headers, rowIndex, [obj]);
+}
+
+/** 從第 rowIndex 列起連續寫入多列；格式規則同 writeRecord */
+function writeRecords(sheet, headers, rowIndex, objs) {
+  const values = objs.map(obj => headers.map(h => (obj[h] === undefined || obj[h] === null ? '' : obj[h])));
+  const formats = values.map(row => row.map(v => {
     if (v instanceof Date) return 'yyyy-mm-dd hh:mm';
     if (typeof v === 'number' || typeof v === 'boolean') return '0';  // 布林寫成 TRUE／FALSE，不轉文字
     return '@';
-  });
-  const range = sheet.getRange(rowIndex, 1, 1, headers.length);
-  range.setNumberFormats([formats]);
-  range.setValues([values]);
+  }));
+  const range = sheet.getRange(rowIndex, 1, objs.length, headers.length);
+  range.setNumberFormats(formats);
+  range.setValues(values);
 }
 
 /** 新增一列（需在 withLock 內呼叫） */
 function appendRecord(sheetName, obj) {
+  appendRecords(sheetName, [obj]);
+}
+
+/** 一次新增多列（需在 withLock 內呼叫），例：訂單明細 */
+function appendRecords(sheetName, objs) {
+  if (objs.length === 0) return;
   const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
   if (!sheet) throw new Error(`找不到分頁：${sheetName}`);
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  writeRecord(sheet, headers, sheet.getLastRow() + 1, obj);
+  writeRecords(sheet, headers, sheet.getLastRow() + 1, objs);
+}
+
+/** 台北時間的今天 'yyyy-mm-dd' */
+function todayString() {
+  return Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
 }
 
 /** 以 idField 找到該列並合併 patch 後整列寫回，回傳更新後的物件（需在 withLock 內呼叫） */
@@ -102,9 +118,12 @@ function updateRecord(sheetName, idField, id, patch) {
   return record;
 }
 
-/** 產生主鍵：前綴-yyyymmdd-流水號，例 C-20261019-001（需在 withLock 內呼叫） */
-function nextId(prefix, existingIds) {
-  const head = `${prefix}-${Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyyMMdd')}-`;
+/**
+ * 產生主鍵：前綴-yyyymmdd-流水號，例 C-20261019-001（需在 withLock 內呼叫）。
+ * date 預設今天；補登的訂單傳入訂單日期，流水號接續該日已有的最大值。
+ */
+function nextId(prefix, existingIds, date = new Date()) {
+  const head = `${prefix}-${Utilities.formatDate(date, 'Asia/Taipei', 'yyyyMMdd')}-`;
   const max = existingIds
     .map(String)
     .filter(id => id.startsWith(head))
