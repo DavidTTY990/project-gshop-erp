@@ -4,14 +4,17 @@ import { CheckIcon, Loader2Icon, UserIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import CustomerPicker from '@/components/CustomerPicker';
 import CustomerSummary from '@/components/CustomerSummary';
 import FormField from '@/components/FormField';
+import InvoiceFields from '@/components/InvoiceFields';
 import OrderItemsEditor, { type ItemField } from '@/components/OrderItemsEditor';
 import SettingSelect from '@/components/SettingSelect';
 import { useSettings } from '@/lib/api';
+import { validateInvoiceInput, type InvoiceField } from '@/lib/invoices';
 import {
   discountByRate,
   lineTotal,
@@ -83,7 +86,7 @@ export default function OrderNewPage() {
 /** 折扣：比例模式隨小計自動重算；手動輸入金額後改為固定金額 */
 type Discount = { mode: 'rate'; rate: number } | { mode: 'amount'; amount: string };
 
-type FieldKey = `${string}.${ItemField}` | 'discount' | 'payment_method' | 'order_date';
+type FieldKey = `${string}.${ItemField}` | 'discount' | 'payment_method' | 'order_date' | InvoiceField;
 
 const isInt = (v: string) => /^\d+$/.test(v);
 
@@ -117,6 +120,10 @@ function OrderForm({ customerId }: { customerId: string }) {
     staff: currentStaff ?? '',
     note: '',
   });
+  // 預設把全部品項開成一張發票，日期為訂單日期；號碼與統編可之後在詳情頁補填
+  const [issueInvoice, setIssueInvoice] = useState(true);
+  const [invoice, setInvoice] = useState({ invoice_no: '', buyer_tax_id: '' });
+  const invoiceInput = { ...invoice, invoice_date: values.order_date };
   const create = useCreateOrder();
 
   const subtotal = items.reduce((sum, item) => sum + (lineTotal(item) ?? 0), 0);
@@ -124,7 +131,10 @@ function OrderForm({ customerId }: { customerId: string }) {
   const total = subtotal - (isInt(discountAmount) ? Number(discountAmount) : 0);
 
   // 欄位離開焦點後才檢核該欄，送出時檢核全部
-  const field = useFieldErrors(validate(items, discountAmount, subtotal, values));
+  const field = useFieldErrors<FieldKey>({
+    ...validate(items, discountAmount, subtotal, values),
+    ...(issueInvoice ? validateInvoiceInput(invoiceInput, todayString(), false) : {}),
+  });
   const set = (key: keyof typeof values) => (v: string) => setValues((s) => ({ ...s, [key]: v }));
 
   const handleSubmit = (e: FormEvent) => {
@@ -136,6 +146,7 @@ function OrderForm({ customerId }: { customerId: string }) {
         items: items.map(({ uid: _uid, ...item }) => item),
         discount: discountAmount,
         ...values,
+        invoice: issueInvoice ? invoice : null,
       },
       {
         onSuccess: ({ order }) => {
@@ -241,6 +252,35 @@ function OrderForm({ customerId }: { customerId: string }) {
           <FormField id="note" label="備註">
             <Textarea id="note" rows={2} value={values.note} onChange={(e) => set('note')(e.target.value)} />
           </FormField>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>4. 發票</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <Checkbox id="issue-invoice" className="size-5" checked={issueInvoice} onCheckedChange={(v) => setIssueInvoice(v === true)} />
+            <label htmlFor="issue-invoice" className="text-sm font-medium">
+              開立發票（全部品項一張，{formatMoney(total)}）
+            </label>
+          </div>
+          {issueInvoice ? (
+            <>
+              <InvoiceFields
+                idPrefix="new-order"
+                values={invoiceInput}
+                onChange={({ invoice_no, buyer_tax_id }) => setInvoice({ invoice_no, buyer_tax_id })}
+                error={field.error}
+                touch={field.touch}
+                withDate={false}
+              />
+              <p className="text-sm text-muted-foreground">發票日期為訂單日期。號碼可先留空，需要拆成多張時，建立後在訂單頁調整。</p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">不開發票，之後可在訂單頁補開。</p>
+          )}
         </CardContent>
       </Card>
 

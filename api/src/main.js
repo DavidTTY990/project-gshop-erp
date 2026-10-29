@@ -27,6 +27,12 @@ const ACTIONS = {
   updateOrder: p => updateOrder(p),
   cancelOrder: p => cancelOrder(p),
   returnOrder: p => returnOrder(p),
+  issueOrderInvoice: p => issueOrderInvoice(p),
+  moveInvoiceItems: p => moveInvoiceItems(p),
+  issueRepairInvoice: p => issueRepairInvoice(p),
+  updateInvoice: p => updateInvoice(p),
+  deleteInvoice: p => deleteInvoice(p),
+  voidInvoice: p => voidInvoice(p),
 };
 
 /** 不需驗證的健康檢查：瀏覽器開 /exec?action=ping */
