@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { callApi } from './api';
 import { upsertDeviceCache, type Device, type DeviceInput } from './devices';
+import { isPendingInvoice, type Invoice } from './invoices';
 import { queryClient } from './queryClient';
 
 export type Repair = {
@@ -35,7 +36,7 @@ export type RepairLog = {
   created_at: string;
 };
 
-export type RepairDetail = { repair: Repair; device: Device | null; logs: RepairLog[] };
+export type RepairDetail = { repair: Repair; device: Device | null; logs: RepairLog[]; invoices: Invoice[] };
 
 /** 詳情頁可編輯的欄位；金額以字串表示輸入框內容，空字串為未填 */
 export type RepairFieldsInput = {
@@ -69,6 +70,7 @@ export type ChangeStatusInput = { status: string; note: string; staff: string; m
 const ACTIVE_STATUSES = ['已收件', '檢測中', '維修中'];
 const WAITING_STATUSES = ['待報價', '待零件'];
 const READY_STATUSES = ['可取件'];
+export const CANCELLED_STATUS = '已取消';
 export const PICKED_UP_STATUS = '已取件';
 
 export type StatusTone = 'active' | 'waiting' | 'ready' | 'closed';
@@ -133,14 +135,17 @@ function upsertRepairCache(repair: Repair) {
   });
 }
 
+/** 寫入後以回傳的詳情更新快取（發票操作也會用到） */
+export function setRepairDetailCache(detail: RepairDetail) {
+  upsertRepairCache(detail.repair);
+  if (detail.device) upsertDeviceCache(detail.device);
+  queryClient.setQueryData(detailKey(detail.repair.repair_id), detail);
+}
+
 export function useCreateRepair() {
   return useMutation({
     mutationFn: (input: CreateRepairInput) => callApi<RepairDetail>('createRepair', input),
-    onSuccess: (detail) => {
-      upsertRepairCache(detail.repair);
-      if (detail.device) upsertDeviceCache(detail.device);
-      queryClient.setQueryData(detailKey(detail.repair.repair_id), detail);
-    },
+    onSuccess: setRepairDetailCache,
   });
 }
 
@@ -149,7 +154,16 @@ export function useUpdateRepair(id: string) {
     mutationFn: (input: RepairFieldsInput) => callApi<Repair>('updateRepair', { id, ...input }),
     onSuccess: (repair) => {
       upsertRepairCache(repair);
-      queryClient.setQueryData<RepairDetail>(detailKey(id), (d) => d && { ...d, repair });
+      // 後端已讓待補號碼的發票金額跟著總金額更新
+      queryClient.setQueryData<RepairDetail>(
+        detailKey(id),
+        (d) =>
+          d && {
+            ...d,
+            repair,
+            invoices: d.invoices.map((inv) => (isPendingInvoice(inv) && repair.final_amount !== null ? { ...inv, amount: repair.final_amount } : inv)),
+          },
+      );
     },
   });
 }
@@ -160,7 +174,17 @@ export function useChangeRepairStatus(id: string) {
       callApi<{ repair: Repair; log: RepairLog }>('changeRepairStatus', { id, ...input }),
     onSuccess: ({ repair, log }) => {
       upsertRepairCache(repair);
-      queryClient.setQueryData<RepairDetail>(detailKey(id), (d) => d && { ...d, repair, logs: [log, ...d.logs] });
+      // 改為「已取消」時，後端已刪除待補號碼的發票
+      queryClient.setQueryData<RepairDetail>(
+        detailKey(id),
+        (d) =>
+          d && {
+            ...d,
+            repair,
+            logs: [log, ...d.logs],
+            invoices: repair.status === CANCELLED_STATUS ? d.invoices.filter((inv) => !isPendingInvoice(inv)) : d.invoices,
+          },
+      );
     },
   });
 }

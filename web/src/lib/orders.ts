@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { callApi } from './api';
+import type { Invoice } from './invoices';
 import { queryClient } from './queryClient';
 
 export type Order = {
@@ -33,7 +34,7 @@ export type OrderItem = {
   note: string;
 };
 
-export type OrderDetail = { order: Order; items: OrderItem[] };
+export type OrderDetail = { order: Order; items: OrderItem[]; invoices: Invoice[] };
 
 /** 商品名稱提示：過去用過的名稱與最近一次的屬性 */
 export type ProductSuggestion = Pick<OrderItem, 'product_name' | 'category' | 'platform' | 'condition' | 'unit_price'>;
@@ -57,6 +58,8 @@ export type CreateOrderInput = {
   payment_method: string;
   staff: string;
   note: string;
+  /** 全部品項開成一張發票（日期為訂單日期）；null = 不開 */
+  invoice: { invoice_no: string; buyer_tax_id: string } | null;
 };
 
 export type UpdateOrderInput = Pick<Order, 'customer_id' | 'payment_method' | 'staff' | 'note'>;
@@ -107,12 +110,17 @@ function upsertOrderCache(order: Order) {
   queryClient.setQueryData<OrderDetail>(detailKey(order.order_id), (d) => d && { ...d, order });
 }
 
+/** 寫入後以回傳的詳情更新快取（發票操作也會用到） */
+export function setOrderDetailCache(detail: OrderDetail) {
+  queryClient.setQueryData(detailKey(detail.order.order_id), detail);
+  upsertOrderCache(detail.order);
+}
+
 export function useCreateOrder() {
   return useMutation({
     mutationFn: (input: CreateOrderInput) => callApi<OrderDetail>('createOrder', input),
     onSuccess: (detail) => {
-      queryClient.setQueryData(detailKey(detail.order.order_id), detail);
-      upsertOrderCache(detail.order);
+      setOrderDetailCache(detail);
       // 新的商品名稱與價格要出現在下一筆訂單的提示中
       queryClient.invalidateQueries({ queryKey: ['orders', 'productSuggestions'] });
     },
@@ -126,11 +134,15 @@ export function useUpdateOrder(id: string) {
   });
 }
 
-/** 取消或退貨；原因必填 */
+/**
+ * 取消或退貨；原因必填。發票連動由後端處理：待補號碼的發票刪除，已填號碼的取消時作廢、
+ * 退貨時依 invoice_actions（{ [invoice_id]: '作廢' | '折讓' }）。
+ */
 export function useCloseOrder(id: string, kind: 'cancel' | 'return') {
   return useMutation({
-    mutationFn: (reason: string) => callApi<Order>(kind === 'cancel' ? 'cancelOrder' : 'returnOrder', { id, reason }),
-    onSuccess: upsertOrderCache,
+    mutationFn: (input: { reason: string; invoice_actions?: Record<string, string> }) =>
+      callApi<OrderDetail>(kind === 'cancel' ? 'cancelOrder' : 'returnOrder', { id, ...input }),
+    onSuccess: setOrderDetailCache,
   });
 }
 

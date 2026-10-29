@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import { Loader2Icon, PencilIcon, Undo2Icon, UserIcon, XCircleIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,9 +12,11 @@ import BackButton from '@/components/BackButton';
 import CloseOrderDialog from '@/components/CloseOrderDialog';
 import CustomerPicker from '@/components/CustomerPicker';
 import FormField from '@/components/FormField';
+import OrderInvoicesCard from '@/components/OrderInvoicesCard';
 import OrderStatusBadge from '@/components/OrderStatusBadge';
 import SettingSelect from '@/components/SettingSelect';
 import { formatPhone, useCustomer } from '@/lib/customers';
+import { isPendingInvoice, isUninvoiced, type Invoice } from '@/lib/invoices';
 import { backStateFrom, type BackState } from '@/lib/navigation';
 import {
   isWalkIn,
@@ -43,7 +46,7 @@ export default function OrderDetailPage() {
     content = <p className="text-muted-foreground">找不到訂單</p>;
   } else {
     // 以 id 為 key：切換到另一筆訂單時重設編輯狀態
-    content = <OrderView key={data.order.order_id} order={data.order} items={data.items} />;
+    content = <OrderView key={data.order.order_id} order={data.order} items={data.items} invoices={data.invoices ?? []} />;
   }
 
   return (
@@ -54,7 +57,7 @@ export default function OrderDetailPage() {
   );
 }
 
-function OrderView({ order, items }: { order: Order; items: OrderItem[] }) {
+function OrderView({ order, items, invoices }: { order: Order; items: OrderItem[]; invoices: Invoice[] }) {
   const [closing, setClosing] = useState<'cancel' | 'return' | null>(null);
   const location = useLocation();
   const backState = backStateFrom(location, '回訂單');
@@ -65,6 +68,8 @@ function OrderView({ order, items }: { order: Order; items: OrderItem[] }) {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold">{order.order_id}</h1>
         <OrderStatusBadge status={order.status} />
+        {completed && items.some((i) => isUninvoiced(i, invoices)) && <Badge className="bg-amber-100 text-amber-800">未開發票</Badge>}
+        {invoices.some(isPendingInvoice) && <Badge className="bg-amber-100 text-amber-800">發票待補號碼</Badge>}
         {completed && (
           <div className="ml-auto flex gap-2">
             <Button variant="outline" className="h-9" onClick={() => setClosing('return')}>
@@ -78,7 +83,7 @@ function OrderView({ order, items }: { order: Order; items: OrderItem[] }) {
           </div>
         )}
       </div>
-      {closing && <CloseOrderDialog order={order} kind={closing} onOpenChange={(o) => !o && setClosing(null)} />}
+      {closing && <CloseOrderDialog order={order} invoices={invoices} kind={closing} onOpenChange={(o) => !o && setClosing(null)} />}
 
       {!completed && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -94,6 +99,7 @@ function OrderView({ order, items }: { order: Order; items: OrderItem[] }) {
         <InfoCard order={order} />
       </div>
       <ItemsCard order={order} items={items} />
+      <OrderInvoicesCard order={order} items={items} invoices={invoices} />
     </div>
   );
 }

@@ -12,6 +12,7 @@ const REPAIR_INITIAL_STATUS = '已收件';
 const REPAIR_COMPLETED_STATUSES = ['可取件', '無法維修'];
 const REPAIR_PICKED_UP_STATUS = '已取件';
 const REPAIR_ACTIVE_STATUSES = ['已收件', '檢測中', '待報價', '待零件', '維修中'];
+const REPAIR_CANCELLED_STATUS = '已取消';
 
 function normalizeRepair(r) {
   const repair = { ...r };
@@ -42,7 +43,7 @@ function allRepairs() {
   return readRepairs();
 }
 
-/** 維修單、機器與歷程（新到舊） */
+/** 維修單、機器、歷程（新到舊）與發票（含作廢） */
 function getRepair({ id }) {
   const repair = readRepairs().find(r => r.repair_id === String(id));
   if (!repair) throw new AppError('找不到維修單', 'NOT_FOUND');
@@ -50,7 +51,8 @@ function getRepair({ id }) {
   const logs = readRepairLogs()
     .filter(l => l.repair_id === repair.repair_id)
     .reverse();
-  return { repair, device, logs };
+  const invoices = invoicesOf(readInvoices(), INVOICE_SOURCE_REPAIR, repair.repair_id);
+  return { repair, device, logs, invoices };
 }
 
 /** 驗證可編輯欄位；回傳可寫入的物件 */
@@ -122,19 +124,34 @@ function createRepair(params) {
     });
     appendRecord('Repairs', repair);
     const log = appendRepairLog(repair.repair_id, REPAIR_INITIAL_STATUS, '收件', staff, now);
-    return { repair, device, logs: [log] };
+    return { repair, device, logs: [log], invoices: [] };
   });
 }
 
-/** 編輯維修單欄位（不含狀態、客人、機器、收件時間），不寫 RepairLogs */
+/**
+ * 編輯維修單欄位（不含狀態、客人、機器、收件時間），不寫 RepairLogs。
+ * 總金額變動時：待補號碼的發票金額跟著更新；已填號碼的發票需先作廢才能修改。
+ */
 function updateRepair(params) {
   const id = String(params.id || '');
   const data = validateRepairFields(params);
   data.is_paid = toBool(params.is_paid);
   return withLock(() => {
-    if (!readRepairs().some(r => r.repair_id === id)) throw new AppError('找不到維修單', 'NOT_FOUND');
+    const current = readRepairs().find(r => r.repair_id === id);
+    if (!current) throw new AppError('找不到維修單', 'NOT_FOUND');
+    if (data.final_amount !== current.final_amount) syncRepairInvoiceAmount(id, data.final_amount);
     return normalizeRepair(updateRecord('Repairs', 'repair_id', id, { ...data, updated_at: new Date() }));
   });
+}
+
+function syncRepairInvoiceAmount(repairId, finalAmount) {
+  const invoice = invoicesOf(readInvoices(), INVOICE_SOURCE_REPAIR, repairId).find(isValidInvoice);
+  if (!invoice) return;
+  if (!isPendingInvoice(invoice)) {
+    throw new AppError(`已開立發票 ${invoice.invoice_no}，請先作廢發票再修改總金額`, 'VALIDATION');
+  }
+  if (finalAmount === null) throw new AppError('已開立發票（待補號碼），總金額不可清空；請先刪除發票', 'VALIDATION');
+  updateRecord('Invoices', 'invoice_id', invoice.invoice_id, { amount: finalAmount, updated_at: new Date() });
 }
 
 /**
@@ -150,6 +167,15 @@ function changeRepairStatus(params) {
   return withLock(() => {
     const current = readRepairs().find(r => r.repair_id === id);
     if (!current) throw new AppError('找不到維修單', 'NOT_FOUND');
+
+    // 取消：已填號碼的發票需先作廢；待補號碼的發票直接刪除
+    if (status === REPAIR_CANCELLED_STATUS) {
+      const invoice = invoicesOf(readInvoices(), INVOICE_SOURCE_REPAIR, id).find(isValidInvoice);
+      if (invoice && !isPendingInvoice(invoice)) {
+        throw new AppError(`已開立發票 ${invoice.invoice_no}，請先作廢發票再取消維修單`, 'VALIDATION');
+      }
+      if (invoice) deleteRecords('Invoices', 'invoice_id', [invoice.invoice_id]);
+    }
 
     const now = new Date();
     const patch = { status, updated_at: now };

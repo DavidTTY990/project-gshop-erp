@@ -46,7 +46,8 @@ function getOrder({ id }) {
   const order = readOrders().find(o => o.order_id === String(id));
   if (!order) throw new AppError('找不到訂單', 'NOT_FOUND');
   const items = readOrderItems().filter(i => i.order_id === order.order_id);
-  return { order, items };
+  const invoices = invoicesOf(readInvoices(), INVOICE_SOURCE_SALE, order.order_id);
+  return { order, items, invoices };
 }
 
 /** 過去用過的商品名稱（去除重複），各保留最近一次的類別、平台、商品狀態與單價 */
@@ -101,6 +102,7 @@ function requirePaymentMethod(v) {
 /**
  * 新增訂單：狀態固定「已完成」；金額由後端重新計算。
  * order_date 可補登過去日期但不可晚於今天，單號以訂單日期產生。
+ * invoice（{ invoice_no, buyer_tax_id }，null 為不開）：全部品項開成一張發票，日期為訂單日期、金額為總計。
  */
 function createOrder(params) {
   const staff = requireStaff(params.staff);
@@ -113,6 +115,9 @@ function createOrder(params) {
   const subtotal = items.reduce((sum, i) => sum + i.line_total, 0);
   const discount = parseAmount(params.discount, '折扣') ?? 0;
   if (discount > subtotal) throw new AppError('折扣不可大於小計', 'VALIDATION');
+  const invoiceInput = params.invoice
+    ? validateInvoiceInput({ ...params.invoice, invoice_date: Utilities.formatDate(orderDate, 'Asia/Taipei', 'yyyy-MM-dd') })
+    : null;
 
   return withLock(() => {
     const customerId = validateOrderCustomer(params.customer_id);
@@ -142,9 +147,24 @@ function createOrder(params) {
       return normalizeOrderItem({ item_id: itemId, order_id: order.order_id, invoice_id: '', ...item });
     });
 
+    const invoices = [];
+    if (invoiceInput) {
+      const allInvoices = readInvoices();
+      assertInvoiceNoUnique(allInvoices, invoiceInput.invoice_no);
+      const inv = newInvoiceRecord(allInvoices, {
+        ...invoiceInput,
+        source_type: INVOICE_SOURCE_SALE,
+        source_id: order.order_id,
+        amount: order.total,
+      });
+      rows.forEach(r => (r.invoice_id = inv.invoice_id));
+      invoices.push(inv);
+    }
+
     appendRecord('Orders', order);
     appendRecords('OrderItems', rows);
-    return { order, items: rows };
+    appendRecords('Invoices', invoices);
+    return { order, items: rows, invoices };
   });
 }
 
@@ -178,18 +198,33 @@ function updateOrder(params) {
   });
 }
 
-/** 取消與退貨共用：只能從「已完成」轉換，原因必填，寫入 returned_at／return_reason */
-function closeOrder(id, status, reason) {
+/**
+ * 取消與退貨共用：只能從「已完成」轉換，原因必填，寫入 returned_at／return_reason。
+ * 發票連動：待補號碼的發票刪除；已填號碼的發票取消時作廢，退貨時依 invoiceActions（{ [invoice_id]: '作廢' | '折讓' }，預設作廢）。
+ * 品項不釋出。回傳 { order, items, invoices }。
+ */
+function closeOrder(id, status, reason, invoiceActions = {}) {
+  const label = status === ORDER_CANCELLED ? '取消' : '退貨';
   const text = toText(reason);
-  if (!text) throw new AppError(`請填寫${status === ORDER_CANCELLED ? '取消' : '退貨'}原因`, 'VALIDATION');
+  if (!text) throw new AppError(`請填寫${label}原因`, 'VALIDATION');
   return withLock(() => {
-    const current = readOrders().find(o => o.order_id === String(id));
-    if (!current) throw new AppError('找不到訂單', 'NOT_FOUND');
+    const ctx = loadOrderInvoiceContext(id);
+    const current = ctx.order;
     if (current.status !== ORDER_COMPLETED) throw new AppError(`訂單已是「${current.status}」`, 'VALIDATION');
+
+    ctx.invoices = ctx.invoices.filter(inv => !isPendingInvoice(inv));
+    ctx.invoices.forEach(inv => {
+      if (inv.invoice_status !== INVOICE_ISSUED) return;
+      const action = status === ORDER_RETURNED && invoiceActions[inv.invoice_id] === INVOICE_ALLOWANCE ? INVOICE_ALLOWANCE : INVOICE_VOID;
+      inv.invoice_status = action;
+      inv.note = appendNote(inv.note, `${todayString()} ${action}：訂單${label}（${text}）`);
+    });
+
     const now = new Date();
-    return normalizeOrder(
+    ctx.order = normalizeOrder(
       updateRecord('Orders', 'order_id', current.order_id, { status, returned_at: now, return_reason: text, updated_at: now }),
     );
+    return saveOrderInvoiceContext(ctx);
   });
 }
 
@@ -197,8 +232,8 @@ function cancelOrder({ id, reason }) {
   return closeOrder(id, ORDER_CANCELLED, reason);
 }
 
-function returnOrder({ id, reason }) {
-  return closeOrder(id, ORDER_RETURNED, reason);
+function returnOrder({ id, reason, invoice_actions }) {
+  return closeOrder(id, ORDER_RETURNED, reason, invoice_actions || {});
 }
 
 function test_productSuggestions() {

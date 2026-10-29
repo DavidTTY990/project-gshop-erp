@@ -9,9 +9,11 @@ import BackButton from '@/components/BackButton';
 import ChangeStatusDialog from '@/components/ChangeStatusDialog';
 import EditDeviceDialog from '@/components/EditDeviceDialog';
 import RepairFieldsForm from '@/components/RepairFieldsForm';
+import RepairInvoiceCard from '@/components/RepairInvoiceCard';
 import RepairStatusBadge from '@/components/RepairStatusBadge';
 import { formatPhone, useCustomer } from '@/lib/customers';
 import { deviceLabel, type Device } from '@/lib/devices';
+import { isPendingInvoice, type Invoice } from '@/lib/invoices';
 import { backStateFrom, type BackState } from '@/lib/navigation';
 import {
   balanceDue,
@@ -41,7 +43,9 @@ export default function RepairDetailPage() {
     content = <p className="text-muted-foreground">找不到維修單</p>;
   } else {
     // 以 id 為 key：切換到另一張維修單時重設編輯狀態
-    content = <RepairView key={data.repair.repair_id} repair={data.repair} device={data.device} logs={data.logs} />;
+    content = (
+      <RepairView key={data.repair.repair_id} repair={data.repair} device={data.device} logs={data.logs} invoices={data.invoices ?? []} />
+    );
   }
 
   return (
@@ -52,7 +56,7 @@ export default function RepairDetailPage() {
   );
 }
 
-function RepairView({ repair, device, logs }: { repair: Repair; device: Device | null; logs: RepairLog[] }) {
+function RepairView({ repair, device, logs, invoices }: { repair: Repair; device: Device | null; logs: RepairLog[]; invoices: Invoice[] }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const location = useLocation();
   // 從這張單點到客人或其他維修單時，返回按鈕回到這裡（並保留這張單原本的返回目標）
@@ -64,6 +68,7 @@ function RepairView({ repair, device, logs }: { repair: Repair; device: Device |
         <h1 className="text-xl font-semibold">{repair.repair_id}</h1>
         <RepairStatusBadge status={repair.status} />
         {isOverdue(repair) && <Badge variant="destructive">逾期</Badge>}
+        {invoices.some(isPendingInvoice) && <Badge className="bg-amber-100 text-amber-800">發票待補號碼</Badge>}
         <Button className="ml-auto h-9" onClick={() => setChangingStatus(true)}>
           <ArrowRightLeftIcon />
           變更狀態
@@ -77,7 +82,10 @@ function RepairView({ repair, device, logs }: { repair: Repair; device: Device |
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
-        <RepairInfoCard repair={repair} />
+        <div className="flex flex-col gap-4">
+          <RepairInfoCard repair={repair} />
+          <RepairInvoiceCard repair={repair} invoices={invoices} />
+        </div>
         <LogsCard logs={logs} />
       </div>
     </div>

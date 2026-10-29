@@ -119,6 +119,38 @@ function updateRecord(sheetName, idField, id, patch) {
 }
 
 /**
+ * 一次更新多列：patches 為 { [id]: patch }，只讀一次整張表，逐列寫回有變動的列（需在 withLock 內呼叫）。
+ * 例：發票變動時更新多個品項的 invoice_id。
+ */
+function updateRecords(sheetName, idField, patches) {
+  const ids = Object.keys(patches);
+  if (ids.length === 0) return;
+  const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
+  if (!sheet) throw new Error(`找不到分頁：${sheetName}`);
+  const [headers, ...rows] = sheet.getDataRange().getValues();
+  const col = headers.indexOf(idField);
+  rows.forEach((row, i) => {
+    const patch = patches[String(row[col])];
+    if (!patch) return;
+    const record = { ...Object.fromEntries(headers.map((h, j) => [h, row[j]])), ...patch };
+    writeRecord(sheet, headers, i + 2, record);
+  });
+}
+
+/** 刪除 idField 為 ids 之一的列（需在 withLock 內呼叫）；由下往上刪，避免列號位移 */
+function deleteRecords(sheetName, idField, ids) {
+  if (ids.length === 0) return;
+  const sheet = SpreadsheetApp.getActive().getSheetByName(sheetName);
+  if (!sheet) throw new Error(`找不到分頁：${sheetName}`);
+  const [headers, ...rows] = sheet.getDataRange().getValues();
+  const col = headers.indexOf(idField);
+  const targets = new Set(ids.map(String));
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (targets.has(String(rows[i][col]))) sheet.deleteRow(i + 2);
+  }
+}
+
+/**
  * 產生主鍵：前綴-yyyymmdd-流水號，例 C-20261019-001（需在 withLock 內呼叫）。
  * date 預設今天；補登的訂單傳入訂單日期，流水號接續該日已有的最大值。
  */
