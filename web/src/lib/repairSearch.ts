@@ -2,7 +2,7 @@ import { normalizePhone, type Customer } from './customers';
 import { normalizeInvoiceNo } from './invoices';
 import { normalizeSerial, type Device } from './devices';
 import { paginate, type Page } from './paging';
-import { dateOnly, isOverdue, statusTone, todayString, type Repair } from './repairs';
+import { dateOnly, isOverdue, statusTone, type Repair } from './repairs';
 
 /** 首頁維修分頁的搜尋條件；全部存在網址，從詳情頁返回時保留 */
 export type RepairFilters = {
@@ -54,17 +54,6 @@ export const EMPTY_FILTERS: Omit<RepairFilters, 'q'> = { statuses: [], from: '',
 /** 「未結案」：排除已結案（已取件、無法維修、已取消）的狀態 */
 export function openStatuses(all: string[]) {
   return all.filter((s) => statusTone(s) !== 'closed');
-}
-
-/** 收件日期的快捷範圍（台北時間；週一為一週開始） */
-export function datePreset(preset: 'today' | 'week' | 'month'): { from: string; to: string } {
-  const today = todayString();
-  if (preset === 'today') return { from: today, to: today };
-  const d = new Date(`${today}T00:00:00`);
-  if (preset === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  else d.setDate(1);
-  const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return { from, to: today };
 }
 
 /**
