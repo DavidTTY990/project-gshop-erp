@@ -38,8 +38,35 @@ function readOrderItems() {
   return readSheet('OrderItems').map(normalizeOrderItem);
 }
 
+/** 列表用：每筆訂單附上品項與發票摘要，供首頁搜尋與篩選（詳情另用 getOrder） */
 function allOrders() {
-  return readOrders();
+  const itemsByOrder = groupBy(readOrderItems(), 'order_id');
+  const invoicesByOrder = groupBy(
+    readInvoices().filter(i => i.source_type === INVOICE_SOURCE_SALE),
+    'source_id'
+  );
+  return readOrders().map(o =>
+    withOrderSummary(o, itemsByOrder.get(o.order_id) || [], invoicesByOrder.get(o.order_id) || [])
+  );
+}
+
+/**
+ * 摘要欄位（與前端 lib/orders.ts 的 orderSummary 相同）：
+ * - item_names、item_count：品項名稱（原順序）與品項數
+ * - invoice_nos：所有發票號碼（含作廢、折讓），供關鍵字搜尋
+ * - uninvoiced、pending_invoice：只有「已完成」的訂單才標記（取消／退貨後不再處理發票）
+ */
+function withOrderSummary(order, items, invoices) {
+  const validIds = new Set(invoices.filter(isValidInvoice).map(i => i.invoice_id));
+  const completed = order.status === ORDER_COMPLETED;
+  return {
+    ...order,
+    item_names: items.map(i => i.product_name),
+    item_count: items.length,
+    invoice_nos: invoices.map(i => i.invoice_no).filter(Boolean),
+    uninvoiced: completed && items.some(i => !validIds.has(i.invoice_id)),
+    pending_invoice: completed && invoices.some(isPendingInvoice),
+  };
 }
 
 function getOrder({ id }) {

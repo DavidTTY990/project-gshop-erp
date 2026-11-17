@@ -57,8 +57,7 @@ cd api && yarn deploy
 - [x] 維修（二）：首頁「維修｜客人」分頁與維修篩選、客人頁「歷史維修」「送修過的機器」
 - [x] 訂單（一）：訂單 API、新增訂單（散客、品項、折扣快速鈕、商品名稱提示）、訂單詳情（補綁客人、付款資訊、取消、退貨）、客人頁「新增訂單」按鈕
 - [x] 訂單（二）：發票（訂單與維修單共用；新增訂單時開立、拆分、補號碼、作廢、折讓；取消／退貨連動；維修單發票）
-- [ ] 訂單（三）：首頁「訂單」分頁、客人頁「歷史訂單」
-- [ ] 首頁搜尋：加入「訂單」分頁（維修、客人分頁已完成）
+- [x] 訂單（三）：首頁「訂單」分頁（關鍵字、篩選、實收合計）、客人頁「歷史訂單」、維修分頁可搜尋發票號碼、客人頁歷史分頁
 
 ## 後端（`api/`）
 
@@ -78,7 +77,7 @@ api/
     ├── appsscript.json
     ├── main.js        ← doGet（僅 ping）、doPost、handleRequest、ACTIONS 路由表
     ├── auth.js        ← checkAuth
-    ├── utils.js       ← readSheet、jsonResponse、formatDate、withLock、AppError、appendRecord、appendRecords、updateRecord、updateRecords、deleteRecords、nextId、todayString、PAGE_SIZE、toAmount、toBool、parseAmount、parseDate、toText
+    ├── utils.js       ← readSheet、jsonResponse、formatDate、withLock、AppError、appendRecord、appendRecords、updateRecord、updateRecords、deleteRecords、groupBy、nextId、todayString、PAGE_SIZE、toAmount、toBool、parseAmount、parseDate、toText
     ├── settings.js    ← getSettings
     ├── customers.js   ← allCustomers、getCustomer、createCustomer、updateCustomer
     ├── devices.js     ← allDevices、updateDevice、findOrCreateDevice、normalizeSerial
@@ -255,9 +254,9 @@ api/
   - 唯一的 GET 是不需驗證的 `?action=ping`，用來確認後端是否正常
   - 新增 API：寫好處理函式（接收 `params`），在 `main.js` 的 `ACTIONS` 登記
 - 驗證：`doPost` → `handleRequest` 先呼叫 `checkAuth()`，與 Script Properties 的 `API_USER`、`API_KEY` 比對；失敗時延遲 1 秒並回傳 `{ ok: false, error: '帳號或密碼錯誤', code: 'AUTH' }`。日後可換成 Google 登入
-- 訂單 action：`allOrders`、`getOrder`（`{ id }` → `{ order, items, invoices }`）、`productSuggestions`、`createOrder`（`{ customer_id, order_date, items[], discount, payment_method, staff, note, invoice: { invoice_no, buyer_tax_id } | null }`）、`updateOrder`（`{ id, customer_id, payment_method, staff, note }`）、`cancelOrder`（`{ id, reason }`）、`returnOrder`（`{ id, reason, invoice_actions: { [invoice_id]: '作廢' | '折讓' } }`）；取消／退貨回傳 `{ order, items, invoices }`
+- 訂單 action：`allOrders`（每筆附 `item_names`、`item_count`、`invoice_nos`（含作廢）、`uninvoiced`、`pending_invoice`；後兩者只在「已完成」時為 true，前端 `orderSummary()` 以相同規則從詳情推出）、`getOrder`（`{ id }` → `{ order, items, invoices }`）、`productSuggestions`、`createOrder`（`{ customer_id, order_date, items[], discount, payment_method, staff, note, invoice: { invoice_no, buyer_tax_id } | null }`）、`updateOrder`（`{ id, customer_id, payment_method, staff, note }`）、`cancelOrder`（`{ id, reason }`）、`returnOrder`（`{ id, reason, invoice_actions: { [invoice_id]: '作廢' | '折讓' } }`）；取消／退貨回傳 `{ order, items, invoices }`
 - 發票 action（皆回傳所屬單據的詳情，訂單為 `{ order, items, invoices }`、維修單為 `getRepair` 的結果）：`issueOrderInvoice`（`{ order_id, item_ids[], invoice_no, buyer_tax_id, invoice_date }`）、`moveInvoiceItems`（`{ order_id, item_ids[], to_invoice_id }`，空字串 = 移出成未開發票）、`issueRepairInvoice`（`{ repair_id, invoice_no, buyer_tax_id, invoice_date }`）、`updateInvoice`（`{ id, invoice_no, buyer_tax_id, invoice_date, note }`）、`deleteInvoice`（`{ id }`）、`voidInvoice`（`{ id, reason }`）
-- 已有的 action：`login`（只驗證帳密）、`settings`（回傳 `{ staff: [...], category: [...], ... }`）、`allCustomers`（全部客人，依試算表列順序）、`getCustomer`（`{ id }`）、`createCustomer`、`updateCustomer`（`{ id, name, phone, line_id, note }`）、`allDevices`、`updateDevice`（`{ id, serial_no, device_type, brand, device_model, note }`）、`allRepairs`、`getRepair`（`{ id }` → `{ repair, device, logs, invoices }`）、`createRepair`（`{ customer_id, device_id | device, issue, …, staff }`）、`updateRepair`、`changeRepairStatus`（`{ id, status, note, staff, mark_paid? }`）
+- 已有的 action：`login`（只驗證帳密）、`settings`（回傳 `{ staff: [...], category: [...], ... }`）、`allCustomers`（全部客人，依試算表列順序）、`getCustomer`（`{ id }`）、`createCustomer`、`updateCustomer`（`{ id, name, phone, line_id, note }`）、`allDevices`、`updateDevice`（`{ id, serial_no, device_type, brand, device_model, note }`）、`allRepairs`（每筆附 `invoice_nos`，含作廢）、`getRepair`（`{ id }` → `{ repair, device, logs, invoices }`）、`createRepair`（`{ customer_id, device_id | device, issue, …, staff }`）、`updateRepair`、`changeRepairStatus`（`{ id, status, note, staff, mark_paid? }`）
 
 ## 前端注意事項
 
@@ -282,12 +281,14 @@ api/
   - 頁首「重新整理」按鈕呼叫 `invalidateQueries()`，重新讀取目前畫面的資料（含 `settings`）
   - 新增／編輯成功後以回傳資料 `setQueryData` 更新快取，不重新讀取
 - 客人搜尋：`useAllCustomers()` 讀取全部客人，`searchCustomers()` 在前端比對（姓名、LINE ID、電話數字）、排序（新到舊）與分頁；首頁邊打字邊搜尋，關鍵字以 `replace` 同步到網址 `?q=`。客人詳情以全部客人快取為 `initialData`，快取沒有時才呼叫 `getCustomer`
-- 首頁（`HomePage`）：依類型分頁，`?tab=`（預設維修、`customers` 客人），切換分頁時清除其他條件；各分頁元件（`RepairSearch`、`CustomerSearch`）自行讀寫網址參數
+- 首頁（`HomePage`）：依類型分頁「維修｜訂單｜客人」，`?tab=`（預設維修、`orders` 訂單、`customers` 客人），切換分頁時清除其他條件；各分頁元件（`RepairSearch`、`OrderSearch`、`CustomerSearch`）自行讀寫網址參數；篩選面板共用 `FilterControls`（`FilterGroup`、`FilterChip`、`DateRangeFilter`，快捷範圍在 `lib/dateRange.ts`）
   - 維修搜尋（`src/lib/repairSearch.ts`）：前端合併 `allRepairs`、`allCustomers`、`allDevices`；關鍵字比對單號、客人姓名、電話、序號、機型、問題描述；條件（`?status=`（逗號分隔）、`from`、`to`、`handler`（`__none__` = 未指派）、`paid`、`overdue=1`）收在「篩選」面板，有條件時預設展開；收件時間新到舊
+  - 訂單搜尋（`src/lib/orderSearch.ts`）：前端合併 `allOrders`、`allCustomers`；關鍵字比對單號、客人姓名、電話、商品名稱、發票號碼（正規化後比對，含作廢），「散客」找出所有散客訂單；條件（`?status=`（逗號分隔）、`from`、`to`（訂單日期）、`payment`、`staff`、`invoice=uninvoiced|pending`）；訂單日期新到舊（`compareOrdersDesc`）；列表上方顯示筆數與實收（`summarizeOrders()`，只計「已完成」）
+  - 維修搜尋的關鍵字也比對該維修單的發票號碼
   - 分頁一律用 `src/lib/paging.ts` 的 `paginate()`（每頁 10 筆）與 `<Pagination />`
-- 發票（`src/lib/invoices.ts`）：訂單詳情的 `OrderInvoicesCard`、維修單詳情的 `RepairInvoiceCard`，共用 `InvoiceBlock`（狀態標籤與操作選單）與 `InvoiceDialogs`（開立、編輯、作廢、刪除）；號碼與統編檢核、金額預估與後端相同規則。發票操作回傳詳情後以 `setOrderDetailCache`／`setRepairDetailCache` 更新快取
+- 發票（`src/lib/invoices.ts`）：訂單詳情的 `OrderInvoicesCard`、維修單詳情的 `RepairInvoiceCard`，共用 `InvoiceBlock`（狀態標籤與操作選單）與 `InvoiceDialogs`（開立、編輯、作廢、刪除）；號碼與統編檢核、金額預估與後端相同規則。發票操作回傳詳情後以 `setOrderDetailCache`／`setRepairDetailCache` 更新快取（同時重算列表快取的摘要與 `invoice_nos`；只回傳單據本身的寫入會沿用原本的摘要）
   - 從 `DropdownMenu` 開啟 Dialog 時用 `modal={false}`，避免 body 的 pointer-events 被鎖住
-- 客人頁：歷史維修（新到舊）與送修過的機器，由 `useCustomerHistory()`（`src/lib/customerHistory.ts`）從 Repairs 推出；新增維修單的機器選擇也用它
+- 客人頁：歷史訂單（訂單日期新到舊，標題列顯示筆數與「已完成」累計金額）、歷史維修（新到舊）與送修過的機器；兩個歷史卡片各自每頁 10 筆（頁碼只存在元件狀態）。歷史維修由 `useCustomerHistory()`（`src/lib/customerHistory.ts`）從 Repairs 推出；新增維修單的機器選擇也用它
 - 表單檢核時機：用 `src/lib/useFieldErrors.ts`，欄位 onBlur 後才顯示該欄錯誤、送出時顯示當下有錯的欄位（送出後才新增的欄位，例如新品項，仍等 onBlur）；錯誤每次 render 由目前的值重新計算。下拉選單（`SettingSelect`）以選單關閉視為離開欄位（觸發器的 onBlur 在展開時就會觸發）
 - 不要用 `crypto.randomUUID()`：手機以區網 IP（http）連 dev server 時不是安全環境，會直接出錯；前端暫時 id 用遞增編號
 - 彈出視窗（Dialog）中的表單：React 事件會沿**元件樹**冒泡（不是 DOM 樹），Portal 內的 `submit` 會觸發外層 `<form>` 的 onSubmit。視窗不要放在其他表單內；可重用的表單元件在 onSubmit 中 `e.stopPropagation()`

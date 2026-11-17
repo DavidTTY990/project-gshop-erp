@@ -53,7 +53,7 @@ export default function RepairSearch() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex gap-2">
-        <SearchInput value={keyword} onChange={handleKeyword} placeholder="單號、客人、電話、序號、機型、問題" />
+        <SearchInput value={keyword} onChange={handleKeyword} placeholder="單號、客人、電話、序號、機型、問題、發票號碼" />
         <Button
           variant={panelOpen ? 'secondary' : 'outline'}
           className="h-10 shrink-0"

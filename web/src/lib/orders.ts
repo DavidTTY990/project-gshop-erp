@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { callApi } from './api';
-import type { Invoice } from './invoices';
+import { isPendingInvoice, isValidInvoice, type Invoice } from './invoices';
 import { queryClient } from './queryClient';
 
 export type Order = {
@@ -33,6 +33,17 @@ export type OrderItem = {
   line_total: number;
   note: string;
 };
+
+/** allOrders 附加的摘要（與後端 withOrderSummary 相同），供首頁搜尋與篩選 */
+export type OrderSummary = {
+  item_names: string[];
+  item_count: number;
+  invoice_nos: string[]; // 含作廢、折讓
+  uninvoiced: boolean; // 「已完成」且有品項沒有有效發票
+  pending_invoice: boolean; // 「已完成」且有待補號碼的發票
+};
+
+export type OrderRow = Order & OrderSummary;
 
 export type OrderDetail = { order: Order; items: OrderItem[]; invoices: Invoice[] };
 
@@ -83,7 +94,7 @@ const detailKey = (id: string) => ['orders', 'detail', id];
 export function useAllOrders() {
   return useQuery({
     queryKey: ORDERS_KEY,
-    queryFn: () => callApi<Order[]>('allOrders'),
+    queryFn: () => callApi<OrderRow[]>('allOrders'),
   });
 }
 
@@ -101,11 +112,26 @@ export function useProductSuggestions() {
   });
 }
 
-function upsertOrderCache(order: Order) {
-  queryClient.setQueryData<Order[]>(ORDERS_KEY, (list) => {
+/** 從詳情算出列表摘要（與後端 withOrderSummary 相同） */
+export function orderSummary({ order, items, invoices }: OrderDetail): OrderSummary {
+  const validIds = new Set(invoices.filter(isValidInvoice).map((i) => i.invoice_id));
+  const completed = order.status === ORDER_COMPLETED;
+  return {
+    item_names: items.map((i) => i.product_name),
+    item_count: items.length,
+    invoice_nos: invoices.map((i) => i.invoice_no).filter(Boolean),
+    uninvoiced: completed && items.some((i) => !validIds.has(i.invoice_id)),
+    pending_invoice: completed && invoices.some(isPendingInvoice),
+  };
+}
+
+/** 更新列表快取中的一列；沒有傳摘要時（例：updateOrder 只回傳訂單）沿用原本的摘要 */
+function upsertOrderCache(order: Order, summary?: OrderSummary) {
+  queryClient.setQueryData<OrderRow[]>(ORDERS_KEY, (list) => {
     if (!list) return list;
-    const exists = list.some((o) => o.order_id === order.order_id);
-    return exists ? list.map((o) => (o.order_id === order.order_id ? order : o)) : [...list, order];
+    const old = list.find((o) => o.order_id === order.order_id);
+    if (old) return list.map((o) => (o === old ? { ...old, ...order, ...summary } : o));
+    return summary ? [...list, { ...order, ...summary }] : list;
   });
   queryClient.setQueryData<OrderDetail>(detailKey(order.order_id), (d) => d && { ...d, order });
 }
@@ -113,7 +139,24 @@ function upsertOrderCache(order: Order) {
 /** 寫入後以回傳的詳情更新快取（發票操作也會用到） */
 export function setOrderDetailCache(detail: OrderDetail) {
   queryClient.setQueryData(detailKey(detail.order.order_id), detail);
-  upsertOrderCache(detail.order);
+  upsertOrderCache(detail.order, orderSummary(detail));
+}
+
+/** 筆數與實收合計（只算「已完成」）；首頁與客人頁共用 */
+export function summarizeOrders(orders: Order[]) {
+  const revenue = orders.filter((o) => o.status === ORDER_COMPLETED).reduce((s, o) => s + o.total, 0);
+  return { count: orders.length, revenue };
+}
+
+/** 品項摘要：第一項名稱，多項時加「等 N 項」 */
+export function itemsLabel(order: OrderSummary) {
+  if (order.item_count === 0) return '—';
+  return order.item_count > 1 ? `${order.item_names[0]} 等 ${order.item_count} 項` : order.item_names[0];
+}
+
+/** 訂單日期新到舊，同一天依建立時間新到舊 */
+export function compareOrdersDesc(a: Order, b: Order) {
+  return b.order_date.localeCompare(a.order_date) || b.created_at.localeCompare(a.created_at);
 }
 
 export function useCreateOrder() {
@@ -130,7 +173,7 @@ export function useCreateOrder() {
 export function useUpdateOrder(id: string) {
   return useMutation({
     mutationFn: (input: UpdateOrderInput) => callApi<Order>('updateOrder', { id, ...input }),
-    onSuccess: upsertOrderCache,
+    onSuccess: (order) => upsertOrderCache(order),
   });
 }
 
