@@ -6,12 +6,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import BackButton from '@/components/BackButton';
 import CustomerForm from '@/components/CustomerForm';
+import { OrderCardContent } from '@/components/OrderList';
+import Pagination from '@/components/Pagination';
 import RepairStatusBadge from '@/components/RepairStatusBadge';
 import { useCustomerHistory } from '@/lib/customerHistory';
 import { formatPhone, useCustomer, useUpdateCustomer, type Customer } from '@/lib/customers';
 import { deviceLabel } from '@/lib/devices';
 import { backStateFrom } from '@/lib/navigation';
-import { dateOnly, isOverdue } from '@/lib/repairs';
+import { compareOrdersDesc, summarizeOrders, useAllOrders } from '@/lib/orders';
+import { paginate } from '@/lib/paging';
+import { dateOnly, formatMoney, isOverdue } from '@/lib/repairs';
 
 export default function CustomerDetailPage() {
   const { id = '' } = useParams();
@@ -32,7 +36,8 @@ export default function CustomerDetailPage() {
     content = (
       <>
         <CustomerCard key={customer.customer_id} customer={customer} />
-        <CustomerHistory customerId={customer.customer_id} />
+        <CustomerOrders key={`orders-${customer.customer_id}`} customerId={customer.customer_id} />
+        <CustomerHistory key={`repairs-${customer.customer_id}`} customerId={customer.customer_id} />
       </>
     );
   }
@@ -123,11 +128,69 @@ function Item({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** 歷史維修（新到舊）與送修過的機器；點入維修單後可返回這裡 */
+/** 歷史訂單（訂單日期新到舊，每頁 10 筆）；標題列顯示「已完成」訂單的累計金額 */
+function CustomerOrders({ customerId }: { customerId: string }) {
+  const location = useLocation();
+  const backState = backStateFrom(location, '回客人資料');
+  const { data, isPending } = useAllOrders();
+  const [page, setPage] = useState(1);
+
+  if (isPending) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2Icon className="size-4 animate-spin" />
+        載入訂單紀錄…
+      </p>
+    );
+  }
+
+  const orders = (data ?? []).filter((o) => o.customer_id === customerId).sort(compareOrdersDesc);
+  const { count, revenue } = summarizeOrders(orders);
+  const current = paginate(orders, page);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>歷史訂單</CardTitle>
+        {count > 0 && (
+          <CardAction className="text-sm text-muted-foreground">
+            共 {count} 筆・累計 <span className="font-semibold text-foreground">{formatMoney(revenue)}</span>
+          </CardAction>
+        )}
+      </CardHeader>
+      <CardContent>
+        {count === 0 ? (
+          <p className="text-sm text-muted-foreground">尚無訂單紀錄</p>
+        ) : (
+          <>
+            <ul className="-mx-2 flex flex-col">
+              {current.items.map((o) => (
+                <li key={o.order_id}>
+                  <Link
+                    to={`/orders/${o.order_id}`}
+                    state={backState}
+                    className="flex flex-col gap-1 rounded-md p-2 hover:bg-accent active:bg-accent"
+                  >
+                    <OrderCardContent order={o} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            {current.total > current.pageSize && <Pagination data={current} onPageChange={setPage} />}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** 歷史維修（新到舊，每頁 10 筆）與送修過的機器；點入維修單後可返回這裡 */
 function CustomerHistory({ customerId }: { customerId: string }) {
   const location = useLocation();
   const backState = backStateFrom(location, '回客人資料');
   const { repairs, pastDevices, isPending } = useCustomerHistory(customerId);
+  const [page, setPage] = useState(1);
+  const current = paginate(repairs, page);
 
   if (isPending) {
     return (
@@ -148,37 +211,40 @@ function CustomerHistory({ customerId }: { customerId: string }) {
           {repairs.length === 0 ? (
             <p className="text-sm text-muted-foreground">尚無維修紀錄</p>
           ) : (
-            <ul className="-mx-2 flex flex-col">
-              {repairs.map((r) => {
-                const device = pastDevices.find((p) => p.device.device_id === r.device_id)?.device;
-                return (
-                  <li key={r.repair_id}>
-                    <Link
-                      to={`/repairs/${r.repair_id}`}
-                      state={backState}
-                      className="flex flex-col gap-1 rounded-md p-2 hover:bg-accent active:bg-accent"
-                    >
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="font-medium">{device ? deviceLabel(device) : r.device_id}</span>
-                        <RepairStatusBadge status={r.status} />
-                      </span>
-                      <span className="truncate text-sm">{r.issue}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {r.repair_id}・收件 {dateOnly(r.received_at)}
-                        {r.estimated_done_date && (
-                          <>
-                            ・預計{' '}
-                            <span className={isOverdue(r) ? 'font-medium text-destructive' : undefined}>
-                              {dateOnly(r.estimated_done_date)}
-                            </span>
-                          </>
-                        )}
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            <>
+              <ul className="-mx-2 flex flex-col">
+                {current.items.map((r) => {
+                  const device = pastDevices.find((p) => p.device.device_id === r.device_id)?.device;
+                  return (
+                    <li key={r.repair_id}>
+                      <Link
+                        to={`/repairs/${r.repair_id}`}
+                        state={backState}
+                        className="flex flex-col gap-1 rounded-md p-2 hover:bg-accent active:bg-accent"
+                      >
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="font-medium">{device ? deviceLabel(device) : r.device_id}</span>
+                          <RepairStatusBadge status={r.status} />
+                        </span>
+                        <span className="truncate text-sm">{r.issue}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {r.repair_id}・收件 {dateOnly(r.received_at)}
+                          {r.estimated_done_date && (
+                            <>
+                              ・預計{' '}
+                              <span className={isOverdue(r) ? 'font-medium text-destructive' : undefined}>
+                                {dateOnly(r.estimated_done_date)}
+                              </span>
+                            </>
+                          )}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+              {current.total > current.pageSize && <Pagination data={current} onPageChange={setPage} />}
+            </>
           )}
         </CardContent>
       </Card>
