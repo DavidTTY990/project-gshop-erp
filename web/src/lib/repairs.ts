@@ -25,6 +25,8 @@ export type Repair = {
   note: string;
   created_at: string;
   updated_at: string;
+  /** 只有 allRepairs 會附上：所有發票號碼（含作廢），供首頁關鍵字搜尋 */
+  invoice_nos?: string[];
 };
 
 export type RepairLog = {
@@ -127,17 +129,18 @@ export function useRepair(id: string) {
   });
 }
 
+/** 更新列表快取中的一列；沒有傳 invoice_nos 時沿用原本的值 */
 function upsertRepairCache(repair: Repair) {
   queryClient.setQueryData<Repair[]>(REPAIRS_KEY, (list) => {
     if (!list) return list;
-    const exists = list.some((r) => r.repair_id === repair.repair_id);
-    return exists ? list.map((r) => (r.repair_id === repair.repair_id ? repair : r)) : [...list, repair];
+    const old = list.find((r) => r.repair_id === repair.repair_id);
+    return old ? list.map((r) => (r === old ? { ...old, ...repair } : r)) : [...list, repair];
   });
 }
 
 /** 寫入後以回傳的詳情更新快取（發票操作也會用到） */
 export function setRepairDetailCache(detail: RepairDetail) {
-  upsertRepairCache(detail.repair);
+  upsertRepairCache({ ...detail.repair, invoice_nos: detail.invoices.map((i) => i.invoice_no).filter(Boolean) });
   if (detail.device) upsertDeviceCache(detail.device);
   queryClient.setQueryData(detailKey(detail.repair.repair_id), detail);
 }

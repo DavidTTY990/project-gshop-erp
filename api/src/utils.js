@@ -193,3 +193,14 @@ function parseDate(v, label) {
 function toText(v) {
   return String(v ?? '').trim();
 }
+
+/** 依欄位值分組：Map<值, 物件陣列>，保留原順序 */
+function groupBy(list, field) {
+  const map = new Map();
+  list.forEach(x => {
+    const key = x[field];
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(x);
+  });
+  return map;
+}

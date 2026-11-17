@@ -39,8 +39,16 @@ function readRepairLogs() {
   }));
 }
 
+/** 列表用：每筆維修單附上所有發票號碼（含作廢），供首頁關鍵字搜尋 */
 function allRepairs() {
-  return readRepairs();
+  const invoicesByRepair = groupBy(
+    readInvoices().filter(i => i.source_type === INVOICE_SOURCE_REPAIR),
+    'source_id'
+  );
+  return readRepairs().map(r => ({
+    ...r,
+    invoice_nos: (invoicesByRepair.get(r.repair_id) || []).map(i => i.invoice_no).filter(Boolean),
+  }));
 }
 
 /** 維修單、機器、歷程（新到舊）與發票（含作廢） */
